@@ -45,7 +45,8 @@ permissionset 50100 "BCSR ADMIN"
         codeunit "BCSR Availability Mgt." = X,
         codeunit "BCSR Idempotency Mgt." = X,
         codeunit "BCSR Audit Mgt." = X,
-        codeunit "BCSR Telemetry Mgt." = X;
+        codeunit "BCSR Telemetry Mgt." = X,
+        codeunit "BCSR Test API" = X;
 }
 
 permissionset 50101 "BCSR API"
@@ -68,5 +69,6 @@ permissionset 50101 "BCSR API"
         codeunit "BCSR Backorder Service" = X,
         codeunit "BCSR Availability Mgt." = X,
         codeunit "BCSR Idempotency Mgt." = X,
-        codeunit "BCSR Audit Mgt." = X;
+        codeunit "BCSR Audit Mgt." = X,
+        codeunit "BCSR Test API" = X;
 }

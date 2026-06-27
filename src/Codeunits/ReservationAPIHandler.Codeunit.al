@@ -1,5 +1,6 @@
 codeunit 50104 "BCSR API Actions"
 {
+    InherentPermissions = X;
     [ServiceEnabled]
     procedure Reserve(idempotencyKey: Text[150]; correlationId: Text[100]; wooSessionId: Text[100]; wooCustomerId: Text[100]; wooCartHash: Text[100]; wooCartItemKey: Text[100]; itemNo: Code[20]; variantCode: Code[10]; locationCode: Code[10]; uomCode: Code[10]; quantity: Decimal): Text
     var
