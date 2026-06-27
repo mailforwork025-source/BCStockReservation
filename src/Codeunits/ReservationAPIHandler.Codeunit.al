@@ -83,7 +83,17 @@ codeunit 50104 "BCSR API Actions"
 
     [ServiceEnabled]
     procedure GetAvailability(itemNo: Code[20]; variantCode: Code[10]; locationCode: Code[10]; uomCode: Code[10]): Text
+    var
+        ReservationService: Codeunit "BCSR Reservation Service";
+        ResponsePayload: Text;
     begin
-        exit('Hello World');
+        ReservationService.GetAvailability(itemNo, variantCode, locationCode, uomCode, ResponsePayload);
+        exit(ResponsePayload);
+end;
+
+    [ServiceEnabled]
+    procedure Ping(): Text
+    begin
+        exit('PONG FROM 50104');
     end;
 }

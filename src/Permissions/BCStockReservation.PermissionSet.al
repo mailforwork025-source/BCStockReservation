@@ -14,6 +14,7 @@ permissionset 50100 "BCSR ADMIN"
         tabledata "BCSR Backorder Header" = RIMD,
         tabledata "BCSR Backorder Line" = RIMD,
         tabledata "BCSR Schema Version" = RIMD,
+        tabledata Item = RIMD,
         table "BCSR Setup" = X,
         table "BCSR Availability Bucket" = X,
         table "BCSR Reservation Header" = X,
@@ -46,7 +47,7 @@ permissionset 50100 "BCSR ADMIN"
         codeunit "BCSR Idempotency Mgt." = X,
         codeunit "BCSR Audit Mgt." = X,
         codeunit "BCSR Telemetry Mgt." = X,
-        codeunit "BCSR Test API" = X;
+        codeunit "BCSR Test API Diag" = X;
 }
 
 permissionset 50101 "BCSR API"
@@ -70,5 +71,8 @@ permissionset 50101 "BCSR API"
         codeunit "BCSR Availability Mgt." = X,
         codeunit "BCSR Idempotency Mgt." = X,
         codeunit "BCSR Audit Mgt." = X,
-        codeunit "BCSR Test API" = X;
-}
+        codeunit "BCSR Test API" = X,
+        codeunit "BCSR Test API Diag" = X,
+        tabledata Item = RIMD;
+    }
+

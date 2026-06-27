@@ -1,25 +1,25 @@
 codeunit 50106 "BCSR Availability Mgt."
 {
     procedure GetOrCreateLockedBucket(ItemNo: Code[20]; VariantCode: Code[10]; LocationCode: Code[10]; var Bucket: Record "BCSR Availability Bucket")
-    var
-        Item: Record Item;
+var
+    Item: Record Item;
     begin
-        if not Item.Get(ItemNo) then
-            Error(ItemNotFoundErr, ItemNo);
+    if not Item.Get(ItemNo) then
+        Error(ItemNotFoundErr, ItemNo);
 
-        Bucket.LockTable();
-        Bucket.SetRange("Item No.", ItemNo);
-        Bucket.SetRange("Variant Code", VariantCode);
-        Bucket.SetRange("Location Code", LocationCode);
-        if Bucket.FindFirst() then
-            exit;
+    Bucket.LockTable();
+    Bucket.SetRange("Item No.", ItemNo);
+    Bucket.SetRange("Variant Code", VariantCode);
+    Bucket.SetRange("Location Code", LocationCode);
+    if Bucket.FindFirst() then
+        exit;
 
-        Bucket.Init();
-        Bucket."Item No." := ItemNo;
-        Bucket."Variant Code" := VariantCode;
-        Bucket."Location Code" := LocationCode;
-        Bucket."Base Unit of Measure" := Item."Base Unit of Measure";
-        Bucket.Insert(true);
+    Bucket.Init();
+    Bucket."Item No." := ItemNo;
+    Bucket."Variant Code" := VariantCode;
+    Bucket."Location Code" := LocationCode;
+    Bucket."Base Unit of Measure" := Item."Base Unit of Measure";
+    Bucket.Insert(false);
     end;
 
     procedure RecalculateBucket(var Bucket: Record "BCSR Availability Bucket")
@@ -45,7 +45,7 @@ codeunit 50106 "BCSR Availability Mgt."
         Bucket."Backorder Qty." := SumBackorderQty(BackorderLine);
 
         Bucket."Last Recalculated" := CurrentDateTime;
-        Bucket.Modify(true);
+        Bucket.Modify(false);
     end;
 
     procedure GetAvailableQtyBase(Bucket: Record "BCSR Availability Bucket"): Decimal
