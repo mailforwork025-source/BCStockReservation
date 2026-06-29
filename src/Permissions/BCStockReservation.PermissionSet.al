@@ -74,5 +74,6 @@ permissionset 50101 "BCSR API"
         codeunit "BCSR Test API" = X,
         codeunit "BCSR Test API Diag" = X,
         tabledata Item = RIMD;
+
     }
 
