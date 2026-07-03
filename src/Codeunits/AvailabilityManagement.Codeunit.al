@@ -15,6 +15,7 @@ var
         exit;
 
     Bucket.Init();
+    Bucket."Bucket ID" := CreateGuid();
     Bucket."Item No." := ItemNo;
     Bucket."Variant Code" := VariantCode;
     Bucket."Location Code" := LocationCode;

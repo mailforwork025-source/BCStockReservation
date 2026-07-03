@@ -80,18 +80,15 @@ table 50100 "BCSR Setup"
         }
     }
 
-    procedure GetSetup(): Record "BCSR Setup"
-    var
-        Setup: Record "BCSR Setup";
+    procedure GetSetup()
     begin
-        if not Setup.Get() then begin
-            Setup.Init();
-            Setup."Primary Key" := '';
-            Setup."Reservation Duration (Min.)" := 15;
-            Setup."Pending Order Timeout (Min.)" := 60;
-            Setup."Cleanup Batch Size" := 500;
-            Setup.Insert(true);
+        if not Get() then begin
+            Init();
+            "Primary Key" := '';
+            "Reservation Duration (Min.)" := 15;
+            "Pending Order Timeout (Min.)" := 60;
+            "Cleanup Batch Size" := 500;
+            Insert(true);
         end;
-        exit(Setup);
     end;
 }
