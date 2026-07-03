@@ -6,28 +6,28 @@ pageextension 50125 "Item Card Reservation Ext." extends "Item Card"
         {
             group(StockReservation)
             {
-                Caption = 'Stock Reservation';
+                Caption = 'WooCommerce Stock Reservation';
 
                 field("Reserved Qty"; ReservedQty)
                 {
                     ApplicationArea = All;
-                    Caption = 'Reserved Quantity';
+                    Caption = 'WooCommerce Reserved Qty.';
                     Editable = false;
-                    ToolTip = 'Quantity currently reserved by WooCommerce cart sessions.';
+                    ToolTip = 'Quantity currently reserved by WooCommerce cart sessions. Separate from, and not included in, the standard Reserved Quantity field.';
                 }
                 field("Available Qty"; AvailableQty)
                 {
                     ApplicationArea = All;
-                    Caption = 'Available Quantity';
+                    Caption = 'WooCommerce Available Qty.';
                     Editable = false;
-                    ToolTip = 'Quantity available for new reservations.';
+                    ToolTip = 'Quantity available for new WooCommerce reservations, after subtracting WooCommerce holds and standard Business Central sales order reservations.';
                 }
                 field("Backordered Qty"; BackorderedQty)
                 {
                     ApplicationArea = All;
-                    Caption = 'Backordered Quantity';
+                    Caption = 'WooCommerce Backordered Qty.';
                     Editable = false;
-                    ToolTip = 'Quantity on open backorders.';
+                    ToolTip = 'Quantity on open WooCommerce backorders.';
                 }
             }
         }

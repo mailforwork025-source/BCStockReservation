@@ -49,6 +49,12 @@ table 50101 "BCSR Availability Bucket"
             Caption = 'Backorder Qty.';
             DecimalPlaces = 0 : 5;
         }
+        field(85; "Native Reserved Qty."; Decimal)
+        {
+            Caption = 'Native Reserved Qty. (BC Sales Orders)';
+            DecimalPlaces = 0 : 5;
+            Editable = false;
+        }
         field(90; "Last Recalculated"; DateTime)
         {
             Caption = 'Last Recalculated';

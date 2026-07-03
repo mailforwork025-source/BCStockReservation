@@ -71,6 +71,7 @@ page 50100 "Stock Reservation Setup"
             action(ActiveReservations) { ApplicationArea = All; Caption = 'Active Reservations'; RunObject = page "Active Reservations"; Image = ReservationLedger; }
             action(ReservationHistory) { ApplicationArea = All; Caption = 'Reservation History'; RunObject = page "Reservation History"; Image = History; }
             action(BackorderList) { ApplicationArea = All; Caption = 'Backorder List'; RunObject = page "Backorder List"; Image = ItemTrackingLedger; }
+            action(BackorderHeaderList) { ApplicationArea = All; Caption = 'Backorder Header List'; RunObject = page "BCSR Backorder Header List"; Image = ItemTrackingLedger; }
             action(InventoryDashboard) { ApplicationArea = All; Caption = 'Inventory Availability Dashboard'; RunObject = page "Inventory Avail. Dashboard"; Image = ItemAvailability; }
             action(FailureQueue) { ApplicationArea = All; Caption = 'Failure Queue'; RunObject = page "BCSR Failure Queue"; Image = ErrorLog; }
             action(OperationLog) { ApplicationArea = All; Caption = 'Operation Log'; RunObject = page "BCSR Operation Log"; Image = Log; }

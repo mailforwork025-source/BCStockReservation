@@ -31,6 +31,24 @@ page 50101 "Active Reservations"
 
     actions
     {
+        area(Navigation)
+        {
+            action(OpenReservationCard)
+            {
+                ApplicationArea = All;
+                Caption = 'Reservation Card';
+                Image = ReservationLedger;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedIsBig = true;
+                ToolTip = 'View the reservation lines (item, quantity, status) for this reservation.';
+
+                trigger OnAction()
+                begin
+                    Page.Run(Page::"BCSR Reservation Card", Rec);
+                end;
+            }
+        }
         area(Processing)
         {
             action(ReleaseReservation)

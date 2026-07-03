@@ -2,8 +2,8 @@ table 50102 "BCSR Reservation Header"
 {
     Caption = 'BCSR Reservation Header';
     DataClassification = CustomerContent;
-    LookupPageId = "Active Reservations";
-    DrillDownPageId = "Active Reservations";
+    LookupPageId = "BCSR Reservation Card";
+    DrillDownPageId = "BCSR Reservation Card";
 
     fields
     {
@@ -85,6 +85,9 @@ table 50102 "BCSR Reservation Header"
         {
         }
         key(SalesOrder; "BC Sales Order System ID")
+        {
+        }
+        key(CreatedDate; "Created DateTime")
         {
         }
     }

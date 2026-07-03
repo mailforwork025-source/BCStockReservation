@@ -1,10 +1,10 @@
-page 50102 "Reservation History"
+page 50117 "BCSR Backorder Header List"
 {
     PageType = List;
     ApplicationArea = All;
-    UsageCategory = History;
-    SourceTable = "BCSR Reservation Header";
-    Caption = 'Reservation History';
+    UsageCategory = Lists;
+    SourceTable = "BCSR Backorder Header";
+    Caption = 'Backorder Header List';
     Editable = false;
     SourceTableView = sorting("Created DateTime") order(descending);
 
@@ -14,16 +14,13 @@ page 50102 "Reservation History"
         {
             repeater(Lines)
             {
-                field("Reservation ID"; Rec."Reservation ID") { ApplicationArea = All; }
-                field(Status; Rec.Status) { ApplicationArea = All; }
-                field("Woo Session ID"; Rec."Woo Session ID") { ApplicationArea = All; }
+                field("Backorder ID"; Rec."Backorder ID") { ApplicationArea = All; }
                 field("Woo Order ID"; Rec."Woo Order ID") { ApplicationArea = All; }
                 field("Woo Order No."; Rec."Woo Order No.") { ApplicationArea = All; }
                 field("BC Sales Order No."; Rec."BC Sales Order No.") { ApplicationArea = All; }
-                field("Expires At"; Rec."Expires At") { ApplicationArea = All; }
+                field(Status; Rec.Status) { ApplicationArea = All; }
                 field("Created DateTime"; Rec."Created DateTime") { ApplicationArea = All; }
                 field("Modified DateTime"; Rec."Modified DateTime") { ApplicationArea = All; }
-                field("Correlation ID"; Rec."Correlation ID") { ApplicationArea = All; }
             }
         }
     }
@@ -32,19 +29,19 @@ page 50102 "Reservation History"
     {
         area(Navigation)
         {
-            action(OpenReservationCard)
+            action(OpenBackorderCard)
             {
                 ApplicationArea = All;
-                Caption = 'Reservation Card';
-                Image = ReservationLedger;
+                Caption = 'Backorder Card';
+                Image = ItemTrackingLedger;
                 Promoted = true;
                 PromotedCategory = Process;
                 PromotedIsBig = true;
-                ToolTip = 'View the reservation lines (item, quantity, status) for this reservation.';
+                ToolTip = 'View the backorder lines (item, quantity, status) for this WooCommerce order.';
 
                 trigger OnAction()
                 begin
-                    Page.Run(Page::"BCSR Reservation Card", Rec);
+                    Page.Run(Page::"BCSR Backorder Card", Rec);
                 end;
             }
         }

@@ -2,6 +2,8 @@ table 50107 "BCSR Backorder Header"
 {
     Caption = 'BCSR Backorder Header';
     DataClassification = CustomerContent;
+    LookupPageId = "BCSR Backorder Header List";
+    DrillDownPageId = "BCSR Backorder Card";
 
     fields
     {
@@ -22,6 +24,7 @@ table 50107 "BCSR Backorder Header"
         key(WooOrder; "Woo Order ID") { Unique = true; }
         key(SalesOrder; "BC Sales Order System ID") { }
         key(Status; Status) { }
+        key(CreatedDate; "Created DateTime") { }
     }
 
     trigger OnInsert()

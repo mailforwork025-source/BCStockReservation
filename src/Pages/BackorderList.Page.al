@@ -30,4 +30,29 @@ page 50103 "Backorder List"
             }
         }
     }
+
+    actions
+    {
+        area(Navigation)
+        {
+            action(OpenBackorderCard)
+            {
+                ApplicationArea = All;
+                Caption = 'Backorder Card';
+                Image = ItemTrackingLedger;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedIsBig = true;
+                ToolTip = 'View the WooCommerce order and Business Central sales order this backorder line belongs to.';
+
+                trigger OnAction()
+                var
+                    Header: Record "BCSR Backorder Header";
+                begin
+                    Header.SetRange("Backorder ID", Rec."Backorder ID");
+                    Page.Run(Page::"BCSR Backorder Card", Header);
+                end;
+            }
+        }
+    }
 }

@@ -45,13 +45,15 @@ var
         BackorderLine.SetFilter(Status, '%1|%2|%3|%4', BackorderLine.Status::Open, BackorderLine.Status::LinkedToSalesLine, BackorderLine.Status::PartiallyAllocated, BackorderLine.Status::Allocated);
         Bucket."Backorder Qty." := SumBackorderQty(BackorderLine);
 
+        Bucket."Native Reserved Qty." := CalculateNativeReservedQty(Bucket."Item No.", Bucket."Variant Code", Bucket."Location Code");
+
         Bucket."Last Recalculated" := CurrentDateTime;
         Bucket.Modify(false);
     end;
 
     procedure GetAvailableQtyBase(Bucket: Record "BCSR Availability Bucket"): Decimal
     begin
-        exit(Bucket."Physical Qty." - Bucket."Reserved Qty." - Bucket."Pending Order Qty.");
+        exit(Bucket."Physical Qty." - Bucket."Reserved Qty." - Bucket."Pending Order Qty." - Bucket."Native Reserved Qty.");
     end;
 
     procedure CalculatePhysicalQty(ItemNo: Code[20]; VariantCode: Code[10]; LocationCode: Code[10]): Decimal
@@ -64,6 +66,18 @@ var
         Item.SetRange("Location Filter", LocationCode);
         Item.CalcFields(Inventory);
         exit(Item.Inventory);
+    end;
+
+    procedure CalculateNativeReservedQty(ItemNo: Code[20]; VariantCode: Code[10]; LocationCode: Code[10]): Decimal
+    var
+        Item: Record Item;
+    begin
+        if not Item.Get(ItemNo) then
+            exit(0);
+        Item.SetRange("Variant Filter", VariantCode);
+        Item.SetRange("Location Filter", LocationCode);
+        Item.CalcFields("Reserved Qty. on Sales Orders");
+        exit(Item."Reserved Qty. on Sales Orders");
     end;
 
     procedure ToBaseQty(ItemNo: Code[20]; UomCode: Code[10]; Quantity: Decimal): Decimal
