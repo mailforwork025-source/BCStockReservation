@@ -4,6 +4,7 @@ codeunit 50101 "BCSR Backorder Service"
     var
         Header: Record "BCSR Backorder Header";
         Line: Record "BCSR Backorder Line";
+        Item: Record Item;
         IdempotencyMgt: Codeunit "BCSR Idempotency Mgt.";
         AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
         AuditMgt: Codeunit "BCSR Audit Mgt.";
@@ -12,6 +13,9 @@ codeunit 50101 "BCSR Backorder Service"
         RequestHash: Text[250];
         QtyBase: Decimal;
     begin
+        if IdempotencyKey = '' then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
         RequestPayload := StrSubstNo('backorder|%1|%2|%3|%4|%5|%6', WooOrderId, WooOrderLineId, BCSalesLineSystemId, ItemNo, VariantCode, Quantity);
         RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
         if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
@@ -21,7 +25,12 @@ codeunit 50101 "BCSR Backorder Service"
         if Quantity <= 0 then
             exit(FailOperation(OperationId, IdempotencyMgt, 'VALIDATION_FAILED', 'Backorder quantity must be greater than zero.', ResponsePayload));
 
-        QtyBase := AvailabilityMgt.ToBaseQty(ItemNo, UomCode, Quantity);
+        if not Item.Get(ItemNo) then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'ITEM_NOT_FOUND', StrSubstNo('Item %1 was not found.', ItemNo), ResponsePayload));
+
+        if not AvailabilityMgt.TryToBaseQty(ItemNo, UomCode, Quantity, QtyBase) then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'UOM_NOT_FOUND', CopyStr(GetLastErrorText(), 1, 250), ResponsePayload));
+
         EnsureHeader(WooOrderId, WooOrderNo, BCSalesOrderSystemId, BCSalesOrderNo, CorrelationId, Header);
         if not GetLine(WooOrderId, WooOrderLineId, Line) then begin
             Line.Init();

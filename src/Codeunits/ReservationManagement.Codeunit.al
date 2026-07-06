@@ -6,6 +6,7 @@ codeunit 50100 "BCSR Reservation Service"
         Header: Record "BCSR Reservation Header";
         Line: Record "BCSR Reservation Line";
         Bucket: Record "BCSR Availability Bucket";
+        Item: Record Item;
         IdempotencyMgt: Codeunit "BCSR Idempotency Mgt.";
         AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
         AuditMgt: Codeunit "BCSR Audit Mgt.";
@@ -19,6 +20,9 @@ codeunit 50100 "BCSR Reservation Service"
         QtyDifference: Decimal;
         QtyDifferenceBase: Decimal;
     begin
+        if IdempotencyKey = '' then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
         RequestPayload := BuildReservePayload(WooSessionId, WooCartItemKey, ItemNo, VariantCode, LocationCode, UomCode, Quantity);
         RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
         if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
@@ -38,7 +42,11 @@ codeunit 50100 "BCSR Reservation Service"
         if LocationCode = '' then
             exit(FailOperation(OperationId, IdempotencyMgt, 'LOCATION_REQUIRED', 'Website location is not configured.', ResponsePayload));
 
-        QtyBase := AvailabilityMgt.ToBaseQty(ItemNo, UomCode, Quantity);
+        if not Item.Get(ItemNo) then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'ITEM_NOT_FOUND', StrSubstNo('Item %1 was not found.', ItemNo), ResponsePayload));
+
+        if not AvailabilityMgt.TryToBaseQty(ItemNo, UomCode, Quantity, QtyBase) then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'UOM_NOT_FOUND', CopyStr(GetLastErrorText(), 1, 250), ResponsePayload));
 
         AvailabilityMgt.GetOrCreateLockedBucket(ItemNo, VariantCode, LocationCode, Bucket);
         AvailabilityMgt.RecalculateBucket(Bucket);
@@ -138,7 +146,12 @@ codeunit 50100 "BCSR Reservation Service"
         RequestPayload: Text;
         RequestHash: Text[250];
         FromStatus: Text[30];
+        NativeUnreserveFailed: Boolean;
+        ManualReviewReason: Text[250];
     begin
+        if IdempotencyKey = '' then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
         RequestPayload := StrSubstNo('release|%1|%2', ReservationId, Reason);
         RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
         if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
@@ -150,9 +163,16 @@ codeunit 50100 "BCSR Reservation Service"
 
         FromStatus := Format(Header.Status);
         Line.SetRange("Reservation ID", ReservationId);
-        Line.SetFilter(Status, '%1|%2|%3', Line.Status::Reserved, Line.Status::PendingOrder, Line.Status::ManualReview);
+        Line.SetFilter(Status, '%1|%2|%3|%4', Line.Status::Reserved, Line.Status::PendingOrder, Line.Status::ManualReview, Line.Status::Confirmed);
         if Line.FindSet(true) then
             repeat
+                if Line.Status = Line.Status::Confirmed then
+                    if not TryUnreserveSalesLine(Line) then begin
+                        NativeUnreserveFailed := true;
+                        ManualReviewReason := CopyStr(GetLastErrorText(), 1, 250);
+                        AuditMgt.LogReservation(ReservationId, 'NativeUnreserveFailed', Format(Line.Status), Format(Line.Status), ManualReviewReason, OperationId, CorrelationId);
+                    end;
+
                 if Bucket.Get(Line."Bucket ID") then begin
                     Bucket.LockTable();
                     Line.Status := Line.Status::Released;
@@ -161,7 +181,11 @@ codeunit 50100 "BCSR Reservation Service"
                 end;
             until Line.Next() = 0;
 
-        Header.Status := Header.Status::Released;
+        if NativeUnreserveFailed then begin
+            Header.Status := Header.Status::ManualReview;
+            Header."Manual Review Reason" := ManualReviewReason;
+        end else
+            Header.Status := Header.Status::Released;
         Header."Last Operation ID" := OperationId;
         Header.Modify(true);
 
@@ -183,7 +207,12 @@ codeunit 50100 "BCSR Reservation Service"
         RequestPayload: Text;
         RequestHash: Text[250];
         FromStatus: Text[30];
+        NativeUnreserveFailed: Boolean;
+        ManualReviewReason: Text[250];
     begin
+        if IdempotencyKey = '' then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
         RequestPayload := StrSubstNo('releaseLine|%1|%2', ReservationId, WooCartItemKey);
         RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
         if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
@@ -195,7 +224,7 @@ codeunit 50100 "BCSR Reservation Service"
 
         Line.SetRange("Reservation ID", ReservationId);
         Line.SetRange("Woo Cart Item Key", WooCartItemKey);
-        Line.SetFilter(Status, '%1|%2|%3', Line.Status::Reserved, Line.Status::PendingOrder, Line.Status::ManualReview);
+        Line.SetFilter(Status, '%1|%2|%3|%4', Line.Status::Reserved, Line.Status::PendingOrder, Line.Status::ManualReview, Line.Status::Confirmed);
         if not Line.FindFirst() then begin
             ResponsePayload := BuildStatusResponse(ReservationId, Header.Status, CorrelationId);
             IdempotencyMgt.CompleteOperation(OperationId, ReservationId, ResponsePayload, 200);
@@ -203,6 +232,13 @@ codeunit 50100 "BCSR Reservation Service"
         end;
 
         FromStatus := Format(Line.Status);
+        if Line.Status = Line.Status::Confirmed then
+            if not TryUnreserveSalesLine(Line) then begin
+                NativeUnreserveFailed := true;
+                ManualReviewReason := CopyStr(GetLastErrorText(), 1, 250);
+                AuditMgt.LogReservation(ReservationId, 'NativeUnreserveFailed', FromStatus, FromStatus, ManualReviewReason, OperationId, CorrelationId);
+            end;
+
         if Bucket.Get(Line."Bucket ID") then begin
             Bucket.LockTable();
             Line.Status := Line.Status::Released;
@@ -212,9 +248,13 @@ codeunit 50100 "BCSR Reservation Service"
 
         Line.Reset();
         Line.SetRange("Reservation ID", ReservationId);
-        Line.SetFilter(Status, '%1|%2|%3', Line.Status::Reserved, Line.Status::PendingOrder, Line.Status::ManualReview);
+        Line.SetFilter(Status, '%1|%2|%3|%4', Line.Status::Reserved, Line.Status::PendingOrder, Line.Status::ManualReview, Line.Status::Confirmed);
         if not Line.FindFirst() then begin
-            Header.Status := Header.Status::Released;
+            if NativeUnreserveFailed then begin
+                Header.Status := Header.Status::ManualReview;
+                Header."Manual Review Reason" := ManualReviewReason;
+            end else
+                Header.Status := Header.Status::Released;
             Header."Last Operation ID" := OperationId;
             Header.Modify(true);
         end;
@@ -238,6 +278,9 @@ codeunit 50100 "BCSR Reservation Service"
         RequestHash: Text[250];
         FromStatus: Text[30];
     begin
+        if IdempotencyKey = '' then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
         RequestPayload := StrSubstNo('convert|%1|%2|%3', ReservationId, WooOrderId, WooOrderNo);
         RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
         if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
@@ -287,7 +330,13 @@ codeunit 50100 "BCSR Reservation Service"
         RequestPayload: Text;
         RequestHash: Text[250];
         FromStatus: Text[30];
+        FullyReserved: Boolean;
+        NativeReservationFailed: Boolean;
+        ManualReviewReason: Text[250];
     begin
+        if IdempotencyKey = '' then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
         RequestPayload := StrSubstNo('confirm|%1|%2|%3|%4', ReservationId, WooOrderId, BCSalesOrderSystemId, BCSalesOrderNo);
         RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
         if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
@@ -317,7 +366,27 @@ codeunit 50100 "BCSR Reservation Service"
                     Line.Modify(true);
                     AvailabilityMgt.RecalculateBucket(Bucket);
                 end;
+
+                Clear(FullyReserved);
+                if TryReserveSalesLine(BCSalesOrderNo, Line, FullyReserved) then begin
+                    Line.Modify(true);
+                    if not FullyReserved then begin
+                        NativeReservationFailed := true;
+                        ManualReviewReason := CopyStr(StrSubstNo('Native BC reservation for item %1 only partially succeeded (insufficient available inventory).', Line."Item No."), 1, 250);
+                        AuditMgt.LogReservation(ReservationId, 'NativeReservePartial', Format(Line.Status), Format(Line.Status), ManualReviewReason, OperationId, CorrelationId);
+                    end;
+                end else begin
+                    NativeReservationFailed := true;
+                    ManualReviewReason := CopyStr(GetLastErrorText(), 1, 250);
+                    AuditMgt.LogReservation(ReservationId, 'NativeReserveFailed', Format(Line.Status), Format(Line.Status), ManualReviewReason, OperationId, CorrelationId);
+                end;
             until Line.Next() = 0;
+
+        if NativeReservationFailed then begin
+            Header.Status := Header.Status::ManualReview;
+            Header."Manual Review Reason" := ManualReviewReason;
+            Header.Modify(true);
+        end;
 
         ResponsePayload := BuildStatusResponse(ReservationId, Header.Status, CorrelationId);
         IdempotencyMgt.CompleteOperation(OperationId, ReservationId, ResponsePayload, 200);
@@ -338,6 +407,9 @@ codeunit 50100 "BCSR Reservation Service"
         RequestHash: Text[250];
         FromStatus: Text[30];
     begin
+        if IdempotencyKey = '' then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
         RequestPayload := StrSubstNo('manualReview|%1|%2', ReservationId, Reason);
         RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
         if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
@@ -441,9 +513,15 @@ codeunit 50100 "BCSR Reservation Service"
     var
         Setup: Record "BCSR Setup";
         Bucket: Record "BCSR Availability Bucket";
+        Item: Record Item;
         AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
         AvailableBase: Decimal;
     begin
+        if not Item.Get(ItemNo) then begin
+            ResponsePayload := BuildErrorResponse('ITEM_NOT_FOUND', StrSubstNo('Item %1 was not found.', ItemNo));
+            exit(false);
+        end;
+
         Setup.GetSetup();
         if LocationCode = '' then
             LocationCode := Setup."Website Location Code";
@@ -500,6 +578,44 @@ codeunit 50100 "BCSR Reservation Service"
         Line.Status := Line.Status::Released;
         Line.Modify(true);
         AuditMgt.LogReservation(Line."Reservation ID", 'ReleaseLineForReprice', OldStatus, Format(Line.Status), 'Previous cart line reservation released before re-reserve.', OperationId, CorrelationId);
+    end;
+
+    [TryFunction]
+    local procedure TryReserveSalesLine(BCSalesOrderNo: Code[20]; var ReservationLine: Record "BCSR Reservation Line"; var FullyReserved: Boolean)
+    var
+        SalesLine: Record "Sales Line";
+        ReservMgt: Codeunit "Reservation Management";
+        NoUniqueSalesLineErr: Label 'Could not uniquely match a Sales Line for item %1 on sales order %2 (%3 candidate line(s) found).', Comment = '%1 = Item No., %2 = Sales Order No., %3 = Number of matching lines found';
+    begin
+        SalesLine.SetRange("Document Type", SalesLine."Document Type"::Order);
+        SalesLine.SetRange("Document No.", BCSalesOrderNo);
+        SalesLine.SetRange(Type, SalesLine.Type::Item);
+        SalesLine.SetRange("No.", ReservationLine."Item No.");
+        SalesLine.SetRange("Variant Code", ReservationLine."Variant Code");
+        SalesLine.SetRange("Location Code", ReservationLine."Location Code");
+        if SalesLine.Count() <> 1 then
+            Error(NoUniqueSalesLineErr, ReservationLine."Item No.", BCSalesOrderNo, SalesLine.Count());
+        SalesLine.FindFirst();
+        SalesLine.TestField("Shipment Date");
+
+        ReservMgt.SetReservSource(SalesLine);
+        ReservMgt.AutoReserve(FullyReserved, '', SalesLine."Shipment Date", ReservationLine.Quantity, ReservationLine."Reserved Qty. (Base)");
+        ReservationLine."BC Sales Line System ID" := SalesLine.SystemId;
+    end;
+
+    [TryFunction]
+    local procedure TryUnreserveSalesLine(var ReservationLine: Record "BCSR Reservation Line")
+    var
+        SalesLine: Record "Sales Line";
+        ReservMgt: Codeunit "Reservation Management";
+    begin
+        if IsNullGuid(ReservationLine."BC Sales Line System ID") then
+            exit;
+        if not SalesLine.GetBySystemId(ReservationLine."BC Sales Line System ID") then
+            exit;
+
+        ReservMgt.SetReservSource(SalesLine);
+        ReservMgt.DeleteReservEntries(true, 0);
     end;
 
     local procedure NextLineNo(ReservationId: Guid): Integer

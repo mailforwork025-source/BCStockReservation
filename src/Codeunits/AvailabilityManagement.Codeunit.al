@@ -53,7 +53,7 @@ var
 
     procedure GetAvailableQtyBase(Bucket: Record "BCSR Availability Bucket"): Decimal
     begin
-        exit(Bucket."Physical Qty." - Bucket."Reserved Qty." - Bucket."Pending Order Qty." - Bucket."Native Reserved Qty.");
+        exit(Bucket."Physical Qty." - Bucket."Reserved Qty." - Bucket."Pending Order Qty." - Bucket."Native Reserved Qty." - Bucket."Backorder Qty.");
     end;
 
     procedure CalculatePhysicalQty(ItemNo: Code[20]; VariantCode: Code[10]; LocationCode: Code[10]): Decimal
@@ -80,7 +80,8 @@ var
         exit(Item."Reserved Qty. on Sales Orders");
     end;
 
-    procedure ToBaseQty(ItemNo: Code[20]; UomCode: Code[10]; Quantity: Decimal): Decimal
+    [TryFunction]
+    procedure TryToBaseQty(ItemNo: Code[20]; UomCode: Code[10]; Quantity: Decimal; var QuantityBase: Decimal)
     var
         Item: Record Item;
         ItemUom: Record "Item Unit of Measure";
@@ -91,7 +92,7 @@ var
             UomCode := Item."Base Unit of Measure";
         if not ItemUom.Get(ItemNo, UomCode) then
             Error(UomNotFoundErr, UomCode, ItemNo);
-        exit(Quantity * ItemUom."Qty. per Unit of Measure");
+        QuantityBase := Quantity * ItemUom."Qty. per Unit of Measure";
     end;
 
     local procedure SumReservedQty(var ReservationLine: Record "BCSR Reservation Line"): Decimal

@@ -87,6 +87,10 @@ table 50103 "BCSR Reservation Line"
         {
             Caption = 'Correlation ID';
         }
+        field(180; "BC Sales Line System ID"; Guid)
+        {
+            Caption = 'BC Sales Line System ID';
+        }
     }
 
     keys
