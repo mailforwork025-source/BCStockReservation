@@ -544,6 +544,26 @@ codeunit 50100 "BCSR Reservation Service"
         exit(true);
     end;
 
+    // Permanent feature: the WooCommerce plugin's order-sync integration only knows the BC Sales
+    // Order Number, so it calls this to resolve the System ID it must pass to ConfirmSync.
+    procedure GetSalesOrderSystemId(BCSalesOrderNo: Code[20]; var ResponsePayload: Text): Boolean
+    var
+        SalesHeader: Record "Sales Header";
+    begin
+        if not SalesHeader.Get(SalesHeader."Document Type"::Order, BCSalesOrderNo) then begin
+            ResponsePayload := BuildErrorResponse('ORDER_NOT_FOUND', StrSubstNo('Sales order %1 was not found.', BCSalesOrderNo));
+            exit(false);
+        end;
+
+        ResponsePayload :=
+            '{' +
+            JsonPair('success', 'true', false) + ',' +
+            JsonPair('bcSalesOrderNo', BCSalesOrderNo, true) + ',' +
+            JsonPair('bcSalesOrderSystemId', Format(SalesHeader.SystemId), true) +
+            '}';
+        exit(true);
+    end;
+
     local procedure EnsureSessionHeader(WooSessionId: Text[100]; WooCustomerId: Text[100]; WooCartHash: Text[100]; CorrelationId: Text[100]; OperationId: Guid; var Header: Record "BCSR Reservation Header")
     begin
         Header.SetRange("Woo Session ID", WooSessionId);

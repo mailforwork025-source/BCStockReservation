@@ -91,6 +91,19 @@ codeunit 50104 "BCSR API Actions"
         exit(ResponsePayload);
 end;
 
+    // Permanent feature (not diagnostic/test scaffolding): the existing WooCommerce order-sync
+    // integration only sends the BC Sales Order Number back to the plugin, not its System ID.
+    // The plugin calls this endpoint to resolve the System ID it needs to pass into ConfirmSync.
+    [ServiceEnabled]
+    procedure GetSalesOrderSystemId(bcSalesOrderNo: Code[20]): Text
+    var
+        ReservationService: Codeunit "BCSR Reservation Service";
+        ResponsePayload: Text;
+    begin
+        ReservationService.GetSalesOrderSystemId(bcSalesOrderNo, ResponsePayload);
+        exit(ResponsePayload);
+    end;
+
     [ServiceEnabled]
     procedure Ping(): Text
     begin
