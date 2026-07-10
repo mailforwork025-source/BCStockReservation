@@ -532,6 +532,7 @@ codeunit 50100 "BCSR Reservation Service"
             '{' +
             JsonPair('success', 'true', false) + ',' +
             JsonPair('itemNo', ItemNo, true) + ',' +
+            JsonPair('baseUomCode', Item."Base Unit of Measure", true) + ',' +
             JsonPair('variantCode', VariantCode, true) + ',' +
             JsonPair('locationCode', LocationCode, true) + ',' +
             JsonPair('uomCode', UomCode, true) + ',' +
