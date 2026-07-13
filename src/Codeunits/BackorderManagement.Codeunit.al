@@ -9,6 +9,7 @@ codeunit 50101 "BCSR Backorder Service"
         AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
         AuditMgt: Codeunit "BCSR Audit Mgt.";
         OperationId: Guid;
+        NullBackorderId: Guid;
         RequestPayload: Text;
         RequestHash: Text[250];
         QtyBase: Decimal;
@@ -27,6 +28,12 @@ codeunit 50101 "BCSR Backorder Service"
 
         if not Item.Get(ItemNo) then
             exit(FailOperation(OperationId, IdempotencyMgt, 'ITEM_NOT_FOUND', StrSubstNo('Item %1 was not found.', ItemNo), ResponsePayload));
+
+        if not Item."BCSR Enable Backorder" then begin
+            ResponsePayload := BuildBackorderDisabledResponse(ItemNo);
+            IdempotencyMgt.CompleteOperation(OperationId, NullBackorderId, ResponsePayload, 200);
+            exit(true);
+        end;
 
         if not AvailabilityMgt.TryToBaseQty(ItemNo, UomCode, Quantity, QtyBase) then
             exit(FailOperation(OperationId, IdempotencyMgt, 'UOM_NOT_FOUND', CopyStr(GetLastErrorText(), 1, 250), ResponsePayload));
@@ -58,6 +65,7 @@ codeunit 50101 "BCSR Backorder Service"
         ResponsePayload :=
             '{' +
             JsonPair('success', 'true', false) + ',' +
+            JsonPair('backorderEnabled', 'true', false) + ',' +
             JsonPair('backorderId', Format(Header."Backorder ID"), true) + ',' +
             JsonPair('backorderLineId', Format(Line."Backorder Line ID"), true) + ',' +
             JsonPair('status', Format(Line.Status), true) + ',' +
@@ -133,6 +141,17 @@ codeunit 50101 "BCSR Backorder Service"
     local procedure ResponseSucceeded(ResponsePayload: Text): Boolean
     begin
         exit(StrPos(ResponsePayload, '"success":true') > 0);
+    end;
+
+    local procedure BuildBackorderDisabledResponse(ItemNo: Code[20]): Text
+    begin
+        exit(
+            '{' +
+            JsonPair('success', 'true', false) + ',' +
+            JsonPair('backorderEnabled', 'false', false) + ',' +
+            JsonPair('itemNo', ItemNo, true) + ',' +
+            JsonPair('message', 'Backorder is not enabled for this item.', true) +
+            '}');
     end;
 
     local procedure JsonPair(Name: Text; Value: Text; QuoteValue: Boolean): Text

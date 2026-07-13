@@ -8,6 +8,18 @@ pageextension 50125 "Item Card Reservation Ext." extends "Item Card"
             {
                 Caption = 'WooCommerce Stock Reservation';
 
+                field("BCSR Enable Reservation"; Rec."BCSR Enable Reservation")
+                {
+                    ApplicationArea = All;
+                    Editable = true;
+                    ToolTip = 'Enables WooCommerce stock reservation and backorder handling for this item. When off, WooCommerce falls back to its own native stock handling for this item.';
+                }
+                field("BCSR Enable Backorder"; Rec."BCSR Enable Backorder")
+                {
+                    ApplicationArea = All;
+                    Editable = true;
+                    ToolTip = 'Enables WooCommerce backorder creation for this item, independent of stock reservation. When off, backorder requests for this item are rejected.';
+                }
                 field("Reserved Qty"; ReservedQty)
                 {
                     ApplicationArea = All;

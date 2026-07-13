@@ -11,6 +11,7 @@ codeunit 50100 "BCSR Reservation Service"
         AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
         AuditMgt: Codeunit "BCSR Audit Mgt.";
         OperationId: Guid;
+        NullReservationId: Guid;
         RequestPayload: Text;
         RequestHash: Text[250];
         QtyBase: Decimal;
@@ -44,6 +45,12 @@ codeunit 50100 "BCSR Reservation Service"
 
         if not Item.Get(ItemNo) then
             exit(FailOperation(OperationId, IdempotencyMgt, 'ITEM_NOT_FOUND', StrSubstNo('Item %1 was not found.', ItemNo), ResponsePayload));
+
+        if not Item."BCSR Enable Reservation" then begin
+            ResponsePayload := BuildReservationDisabledResponse(ItemNo);
+            IdempotencyMgt.CompleteOperation(OperationId, NullReservationId, ResponsePayload, 200);
+            exit(true);
+        end;
 
         if not AvailabilityMgt.TryToBaseQty(ItemNo, UomCode, Quantity, QtyBase) then
             exit(FailOperation(OperationId, IdempotencyMgt, 'UOM_NOT_FOUND', CopyStr(GetLastErrorText(), 1, 250), ResponsePayload));
@@ -522,6 +529,11 @@ codeunit 50100 "BCSR Reservation Service"
             exit(false);
         end;
 
+        if not Item."BCSR Enable Reservation" then begin
+            ResponsePayload := BuildReservationDisabledResponse(ItemNo);
+            exit(true);
+        end;
+
         Setup.GetSetup();
         if LocationCode = '' then
             LocationCode := Setup."Website Location Code";
@@ -531,6 +543,7 @@ codeunit 50100 "BCSR Reservation Service"
         ResponsePayload :=
             '{' +
             JsonPair('success', 'true', false) + ',' +
+            JsonPair('reservationEnabled', 'true', false) + ',' +
             JsonPair('itemNo', ItemNo, true) + ',' +
             JsonPair('baseUomCode', Item."Base Unit of Measure", true) + ',' +
             JsonPair('variantCode', VariantCode, true) + ',' +
@@ -671,6 +684,7 @@ codeunit 50100 "BCSR Reservation Service"
         exit(
             '{' +
             JsonPair('success', 'true', false) + ',' +
+            JsonPair('reservationEnabled', 'true', false) + ',' +
             JsonPair('reservationId', Format(ReservationId), true) + ',' +
             JsonPair('reservationLineId', Format(ReservationLineId), true) + ',' +
             JsonPair('status', Format(Status), true) + ',' +
@@ -699,6 +713,17 @@ codeunit 50100 "BCSR Reservation Service"
             JsonPair('success', 'false', false) + ',' +
             JsonPair('errorCode', ErrorCode, true) + ',' +
             JsonPair('message', Message, true) +
+            '}');
+    end;
+
+    local procedure BuildReservationDisabledResponse(ItemNo: Code[20]): Text
+    begin
+        exit(
+            '{' +
+            JsonPair('success', 'true', false) + ',' +
+            JsonPair('reservationEnabled', 'false', false) + ',' +
+            JsonPair('itemNo', ItemNo, true) + ',' +
+            JsonPair('message', 'Stock reservation is not enabled for this item.', true) +
             '}');
     end;
 
