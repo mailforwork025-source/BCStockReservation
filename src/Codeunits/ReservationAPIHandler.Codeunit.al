@@ -89,7 +89,30 @@ codeunit 50104 "BCSR API Actions"
     begin
         ReservationService.GetAvailability(itemNo, variantCode, locationCode, uomCode, ResponsePayload);
         exit(ResponsePayload);
-end;
+    end;
+
+    [ServiceEnabled]
+    procedure GetBundleAvailability(bundleCode: Code[20]; optionsJson: Text; locationCode: Code[10]; quantity: Decimal): Text
+    var
+        ReservationService: Codeunit "BCSR Reservation Service";
+        ResponsePayload: Text;
+    begin
+        ReservationService.GetBundleAvailability(bundleCode, optionsJson, locationCode, quantity, ResponsePayload);
+        exit(ResponsePayload);
+    end;
+
+    [ServiceEnabled]
+    procedure ReserveBundle(idempotencyKey: Text[150]; correlationId: Text[100]; wooSessionId: Text[100]; wooCustomerId: Text[100]; wooCartHash: Text[100]; wooCartItemKey: Text[100]; bundleCode: Code[20]; optionsJson: Text; locationCode: Code[10]; quantity: Decimal): Text
+    var
+        ReservationService: Codeunit "BCSR Reservation Service";
+        TelemetryMgt: Codeunit "BCSR Telemetry Mgt.";
+        ResponsePayload: Text;
+    begin
+        ReservationService.ReserveBundle(idempotencyKey, correlationId, wooSessionId, wooCustomerId, wooCartHash, wooCartItemKey, bundleCode, optionsJson, locationCode, quantity, ResponsePayload);
+        TelemetryMgt.LogEvent('BCSR0008', 'ReserveBundle action completed.', correlationId);
+        exit(ResponsePayload);
+    end;
+
 
     // Permanent feature (not diagnostic/test scaffolding): the existing WooCommerce order-sync
     // integration only sends the BC Sales Order Number back to the plugin, not its System ID.
