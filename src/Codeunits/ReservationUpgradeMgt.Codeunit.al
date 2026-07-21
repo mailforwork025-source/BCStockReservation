@@ -6,6 +6,7 @@ codeunit 50110 "BCSR Upgrade Mgt."
     var
         Setup: Record "BCSR Setup";
         SchemaVersion: Record "BCSR Schema Version";
+        Cue: Record "BCSR Backorder Cue";
     begin
         if not Setup.Get() then begin
             Setup.Init();
@@ -21,6 +22,23 @@ codeunit 50110 "BCSR Upgrade Mgt."
             SchemaVersion.Version := '2.0.0';
             SchemaVersion."Upgraded From" := '1.0.0';
             SchemaVersion.Notes := 'Migrated from prototype schema to production schema.';
+            SchemaVersion.Insert(true);
+        end;
+
+        // v2.1.0 — Backorder Cue singleton backfill
+        if not SchemaVersion.Get('2.1.0') then begin
+            if not Cue.Get() then begin
+                Cue.Init();
+                Cue."Primary Key" := '';
+                Cue.Insert(true);
+            end;
+            Setup.Get();
+            Setup."Schema Version" := '2.1.0';
+            Setup.Modify(true);
+            SchemaVersion.Init();
+            SchemaVersion.Version := '2.1.0';
+            SchemaVersion."Upgraded From" := '2.0.0';
+            SchemaVersion.Notes := 'Added Backorder Cue singleton for Role Center dashboard tile.';
             SchemaVersion.Insert(true);
         end;
     end;
