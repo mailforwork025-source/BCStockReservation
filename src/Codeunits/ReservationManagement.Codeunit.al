@@ -564,7 +564,7 @@ codeunit 50100 "BCSR Reservation Service"
         JObject: JsonObject;
         ComponentCodeToken: JsonToken;
         OptionCodeToken: JsonToken;
-        BundleOption: Record "Bundle Option";
+        BundleProduct: Record "Bundle Item Product";
         Setup: Record "BCSR Setup";
         Bucket: Record "BCSR Availability Bucket";
         AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
@@ -573,36 +573,35 @@ codeunit 50100 "BCSR Reservation Service"
         Item: Record Item;
     begin
         if not JArray.ReadFrom(OptionsJson) then begin
-            ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
-            exit(false);
-        end;
-
-        Setup.GetSetup();
-        if LocationCode = '' then
-            LocationCode := Setup."Website Location Code";
-
-        MinAvailable := 9999999;
-        
-        foreach JToken in JArray do begin
-            JObject := JToken.AsObject();
-            JObject.Get('componentCode', ComponentCodeToken);
-            JObject.Get('optionCode', OptionCodeToken);
-
-            if BundleOption.Get(BundleCode, ComponentCodeToken.AsValue().AsCode(), OptionCodeToken.AsValue().AsCode()) then begin
-                if Item.Get(BundleOption."Item No.") then begin
-                    AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", BundleOption."Variant Code", LocationCode, Bucket);
-                    AvailabilityMgt.RecalculateBucket(Bucket);
-                    AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
-                    
-                    // Consider component quantity required
-                    if BundleOption.Quantity > 0 then
-                        AvailableBase := AvailableBase / BundleOption.Quantity;
-
-                    if AvailableBase < MinAvailable then
-                        MinAvailable := AvailableBase;
+                ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
+                exit(false);
+            end;
+    
+            Setup.GetSetup();
+            if LocationCode = '' then
+                LocationCode := Setup."Website Location Code";
+    
+            MinAvailable := 9999999;
+            
+            foreach JToken in JArray do begin
+                JObject := JToken.AsObject();
+                JObject.Get('optionTitle', ComponentCodeToken);
+                JObject.Get('itemNo', OptionCodeToken);
+    
+                if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
+                    if Item.Get(BundleProduct."Item No.") then begin
+                        AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", '', LocationCode, Bucket); // Removed Variant Code for now
+                        AvailabilityMgt.RecalculateBucket(Bucket);
+                        AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
+                        
+                        // Consider quantity required (defaulting to 1 for now)
+                        AvailableBase := AvailableBase / 1;
+    
+                        if AvailableBase < MinAvailable then
+                            MinAvailable := AvailableBase;
+                    end;
                 end;
             end;
-        end;
 
         ResponsePayload :=
             '{' +
@@ -621,7 +620,7 @@ codeunit 50100 "BCSR Reservation Service"
         JObject: JsonObject;
         ComponentCodeToken: JsonToken;
         OptionCodeToken: JsonToken;
-        BundleOption: Record "Bundle Option";
+        BundleProduct: Record "Bundle Item Product";
         IdempotencyMgt: Codeunit "BCSR Idempotency Mgt.";
         OperationId: Guid;
         RequestPayload: Text;
@@ -631,33 +630,33 @@ codeunit 50100 "BCSR Reservation Service"
     begin
         // Basic implementation for reserving components iteratively
         if IdempotencyKey = '' then
-            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
-
-        RequestPayload := StrSubstNo('reserveBundle|%1|%2|%3', WooSessionId, WooCartItemKey, BundleCode);
-        RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
-        if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
-            exit(ResponseSucceeded(ResponsePayload));
-
-        OperationId := IdempotencyMgt.StartOperation(IdempotencyKey, 'ReserveBundle', RequestHash, RequestPayload, CorrelationId);
-
-        if not JArray.ReadFrom(OptionsJson) then begin
-            ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
-            IdempotencyMgt.FailOperation(OperationId, 'INVALID_JSON', 'Options must be a valid JSON array.', ResponsePayload, 400);
-            exit(false);
-        end;
-
-        foreach JToken in JArray do begin
-            JObject := JToken.AsObject();
-            JObject.Get('componentCode', ComponentCodeToken);
-            JObject.Get('optionCode', OptionCodeToken);
-
-            if BundleOption.Get(BundleCode, ComponentCodeToken.AsValue().AsCode(), OptionCodeToken.AsValue().AsCode()) then begin
-                // Reserve each item using existing Reserve logic
-                Reserve(IdempotencyKey + '_' + BundleOption."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, WooCartItemKey + '_' + BundleOption."Component Code", BundleOption."Item No.", BundleOption."Variant Code", LocationCode, '', Quantity * BundleOption.Quantity, InnerResponse);
-                if not ResponseSucceeded(InnerResponse) then
-                    AnyFailure := true;
+                exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+    
+            RequestPayload := StrSubstNo('reserveBundle|%1|%2|%3', WooSessionId, WooCartItemKey, BundleCode);
+            RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
+            if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
+                exit(ResponseSucceeded(ResponsePayload));
+    
+            OperationId := IdempotencyMgt.StartOperation(IdempotencyKey, 'ReserveBundle', RequestHash, RequestPayload, CorrelationId);
+    
+            if not JArray.ReadFrom(OptionsJson) then begin
+                ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
+                IdempotencyMgt.FailOperation(OperationId, 'INVALID_JSON', 'Options must be a valid JSON array.', ResponsePayload, 400);
+                exit(false);
             end;
-        end;
+    
+            foreach JToken in JArray do begin
+                JObject := JToken.AsObject();
+                JObject.Get('optionTitle', ComponentCodeToken);
+                JObject.Get('itemNo', OptionCodeToken);
+    
+                if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
+                    // Reserve each item using existing Reserve logic
+                    Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, WooCartItemKey + '_' + BundleProduct."Option Title", BundleProduct."Item No.", '', LocationCode, '', Quantity * 1, InnerResponse); // Defaulted variant and qty
+                    if not ResponseSucceeded(InnerResponse) then
+                        AnyFailure := true;
+                end;
+            end;
 
         if AnyFailure then begin
             // In a complete implementation, this should roll back the previously reserved components.

@@ -26,13 +26,17 @@ page 52000 APIBundles
                 {
                     Caption = 'Code';
                 }
-                field(description; Rec.Description)
+                field(name; Rec.Name)
                 {
-                    Caption = 'Description';
+                    Caption = 'Name';
                 }
-                field(itemNo; Rec."Item No.")
+                field(categoryCode; Rec."Category Code")
                 {
-                    Caption = 'Item No.';
+                    Caption = 'Category Code';
+                }
+                field(allowBackOrder; Rec."Allow Back Order")
+                {
+                    Caption = 'Allow Back Order';
                 }
             }
         }

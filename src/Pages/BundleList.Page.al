@@ -18,15 +18,20 @@ page 52010 "Bundle List"
                     ApplicationArea = All;
                     ToolTip = 'Specifies the code of the bundle.';
                 }
-                field("Description"; Rec."Description")
+                field("Name"; Rec."Name")
                 {
                     ApplicationArea = All;
-                    ToolTip = 'Specifies the description of the bundle.';
+                    ToolTip = 'Specifies the name of the bundle.';
                 }
-                field("Item No."; Rec."Item No.")
+                field("Category Code"; Rec."Category Code")
                 {
                     ApplicationArea = All;
-                    ToolTip = 'Specifies the base item number for this bundle if applicable.';
+                    ToolTip = 'Specifies the category code for this bundle.';
+                }
+                field("Allow Back Order"; Rec."Allow Back Order")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Specifies if the bundle allows back order.';
                 }
             }
         }
