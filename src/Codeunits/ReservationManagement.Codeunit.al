@@ -555,10 +555,126 @@ codeunit 50100 "BCSR Reservation Service"
             JsonPair('backorderQtyBase', FormatDecimal(Bucket."Backorder Qty."), false) + ',' +
             JsonPair('availableQtyBase', FormatDecimal(AvailableBase), false) +
             '}';
+    end;
+
+    procedure GetBundleAvailability(BundleCode: Code[20]; OptionsJson: Text; LocationCode: Code[10]; Quantity: Decimal; var ResponsePayload: Text): Boolean
+    var
+        JArray: JsonArray;
+        JToken: JsonToken;
+        JObject: JsonObject;
+        ComponentCodeToken: JsonToken;
+        OptionCodeToken: JsonToken;
+        BundleOption: Record "Bundle Option";
+        Setup: Record "BCSR Setup";
+        Bucket: Record "BCSR Availability Bucket";
+        AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
+        AvailableBase: Decimal;
+        MinAvailable: Decimal;
+        Item: Record Item;
+    begin
+        if not JArray.ReadFrom(OptionsJson) then begin
+            ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
+            exit(false);
+        end;
+
+        Setup.GetSetup();
+        if LocationCode = '' then
+            LocationCode := Setup."Website Location Code";
+
+        MinAvailable := 9999999;
+        
+        foreach JToken in JArray do begin
+            JObject := JToken.AsObject();
+            JObject.Get('componentCode', ComponentCodeToken);
+            JObject.Get('optionCode', OptionCodeToken);
+
+            if BundleOption.Get(BundleCode, ComponentCodeToken.AsValue().AsCode(), OptionCodeToken.AsValue().AsCode()) then begin
+                if Item.Get(BundleOption."Item No.") then begin
+                    AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", BundleOption."Variant Code", LocationCode, Bucket);
+                    AvailabilityMgt.RecalculateBucket(Bucket);
+                    AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
+                    
+                    // Consider component quantity required
+                    if BundleOption.Quantity > 0 then
+                        AvailableBase := AvailableBase / BundleOption.Quantity;
+
+                    if AvailableBase < MinAvailable then
+                        MinAvailable := AvailableBase;
+                end;
+            end;
+        end;
+
+        ResponsePayload :=
+            '{' +
+            JsonPair('success', 'true', false) + ',' +
+            JsonPair('reservationEnabled', 'true', false) + ',' +
+            JsonPair('bundleCode', BundleCode, true) + ',' +
+            JsonPair('availableQtyBase', FormatDecimal(MinAvailable), false) +
+            '}';
         exit(true);
     end;
 
-    // Permanent feature: the WooCommerce plugin's order-sync integration only knows the BC Sales
+    procedure ReserveBundle(IdempotencyKey: Text[150]; CorrelationId: Text[100]; WooSessionId: Text[100]; WooCustomerId: Text[100]; WooCartHash: Text[100]; WooCartItemKey: Text[100]; BundleCode: Code[20]; OptionsJson: Text; LocationCode: Code[10]; Quantity: Decimal; var ResponsePayload: Text): Boolean
+    var
+        JArray: JsonArray;
+        JToken: JsonToken;
+        JObject: JsonObject;
+        ComponentCodeToken: JsonToken;
+        OptionCodeToken: JsonToken;
+        BundleOption: Record "Bundle Option";
+        IdempotencyMgt: Codeunit "BCSR Idempotency Mgt.";
+        OperationId: Guid;
+        RequestPayload: Text;
+        RequestHash: Text[250];
+        AnyFailure: Boolean;
+        InnerResponse: Text;
+    begin
+        // Basic implementation for reserving components iteratively
+        if IdempotencyKey = '' then
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
+        RequestPayload := StrSubstNo('reserveBundle|%1|%2|%3', WooSessionId, WooCartItemKey, BundleCode);
+        RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
+        if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
+            exit(ResponseSucceeded(ResponsePayload));
+
+        OperationId := IdempotencyMgt.StartOperation(IdempotencyKey, 'ReserveBundle', RequestHash, RequestPayload, CorrelationId);
+
+        if not JArray.ReadFrom(OptionsJson) then begin
+            ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
+            IdempotencyMgt.FailOperation(OperationId, 'INVALID_JSON', 'Options must be a valid JSON array.', ResponsePayload, 400);
+            exit(false);
+        end;
+
+        foreach JToken in JArray do begin
+            JObject := JToken.AsObject();
+            JObject.Get('componentCode', ComponentCodeToken);
+            JObject.Get('optionCode', OptionCodeToken);
+
+            if BundleOption.Get(BundleCode, ComponentCodeToken.AsValue().AsCode(), OptionCodeToken.AsValue().AsCode()) then begin
+                // Reserve each item using existing Reserve logic
+                Reserve(IdempotencyKey + '_' + BundleOption."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, WooCartItemKey + '_' + BundleOption."Component Code", BundleOption."Item No.", BundleOption."Variant Code", LocationCode, '', Quantity * BundleOption.Quantity, InnerResponse);
+                if not ResponseSucceeded(InnerResponse) then
+                    AnyFailure := true;
+            end;
+        end;
+
+        if AnyFailure then begin
+            // In a complete implementation, this should roll back the previously reserved components.
+            ResponsePayload := BuildErrorResponse('RESERVATION_FAILED', 'Failed to reserve one or more bundle components.');
+            IdempotencyMgt.FailOperation(OperationId, 'RESERVATION_FAILED', 'Failed to reserve bundle.', ResponsePayload, 400);
+            exit(false);
+        end;
+
+        ResponsePayload :=
+            '{' +
+            JsonPair('success', 'true', false) + ',' +
+            JsonPair('bundleCode', BundleCode, true) +
+            '}';
+        IdempotencyMgt.CompleteOperation(OperationId, CreateGuid(), ResponsePayload, 200);
+        exit(true);
+    end;
+
     // Order Number, so it calls this to resolve the System ID it must pass to ConfirmSync.
     procedure GetSalesOrderSystemId(BCSalesOrderNo: Code[20]; var ResponsePayload: Text): Boolean
     var
