@@ -1,1 +1,3 @@
-# *.app
+*.app
+output/
+.alpackages/
