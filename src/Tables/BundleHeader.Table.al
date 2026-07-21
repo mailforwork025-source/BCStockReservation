@@ -10,15 +10,22 @@ table 52000 "Bundle Header"
             Caption = 'Code';
             DataClassification = CustomerContent;
         }
-        field(2; "Description"; Text[100])
+        field(2; "Name"; Text[100])
         {
-            Caption = 'Description';
+            Caption = 'Name';
             DataClassification = CustomerContent;
         }
-        field(3; "Item No."; Code[20])
+        field(3; "Category Code"; Code[20])
         {
-            Caption = 'Item No.';
-            TableRelation = Item;
+            Caption = 'Category Code';
+            TableRelation = "Item Category";
+            DataClassification = CustomerContent;
+        }
+        field(4; "Allow Back Order"; Option)
+        {
+            Caption = 'Allow Back Order';
+            OptionMembers = "Do not allow","Allow";
+            OptionCaption = 'Do not allow,Allow';
             DataClassification = CustomerContent;
         }
     }
