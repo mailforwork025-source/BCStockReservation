@@ -647,39 +647,78 @@ codeunit 50100 "BCSR Reservation Service"
         RequestHash: Text[250];
         AnyFailure: Boolean;
         InnerResponse: Text;
+        InnerJObject: JsonObject;
+        InnerReservationIdToken: JsonToken;
+        ReservedCartItemKeys: List of [Text[100]];
+        ComponentCartItemKey: Text[100];
+        RollbackCartItemKey: Text[100];
+        BundleReservationId: Guid;
+        ReleaseResponse: Text;
+        AuditMgt: Codeunit "BCSR Audit Mgt.";
+        RollbackHeader: Record "BCSR Reservation Header";
+        ManualReviewReason: Text[250];
     begin
-        // Basic implementation for reserving components iteratively
         if IdempotencyKey = '' then
-                exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
-    
-            RequestPayload := StrSubstNo('reserveBundle|%1|%2|%3', WooSessionId, WooCartItemKey, BundleCode);
-            RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
-            if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
-                exit(ResponseSucceeded(ResponsePayload));
-    
-            OperationId := IdempotencyMgt.StartOperation(IdempotencyKey, 'ReserveBundle', RequestHash, RequestPayload, CorrelationId);
-    
-            if not JArray.ReadFrom(OptionsJson) then begin
-                ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
-                IdempotencyMgt.FailOperation(OperationId, 'INVALID_JSON', 'Options must be a valid JSON array.', ResponsePayload, 400);
-                exit(false);
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
+
+        RequestPayload := StrSubstNo('reserveBundle|%1|%2|%3', WooSessionId, WooCartItemKey, BundleCode);
+        RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
+        if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
+            exit(ResponseSucceeded(ResponsePayload));
+
+        OperationId := IdempotencyMgt.StartOperation(IdempotencyKey, 'ReserveBundle', RequestHash, RequestPayload, CorrelationId);
+
+        if not JArray.ReadFrom(OptionsJson) then begin
+            ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
+            IdempotencyMgt.FailOperation(OperationId, 'INVALID_JSON', 'Options must be a valid JSON array.', ResponsePayload, 400);
+            exit(false);
+        end;
+
+        foreach JToken in JArray do begin
+            JObject := JToken.AsObject();
+            JObject.Get('optionTitle', ComponentCodeToken);
+            JObject.Get('itemNo', OptionCodeToken);
+
+            if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
+                ComponentCartItemKey := WooCartItemKey + '_' + BundleProduct."Option Title";
+
+                // Reserve each item using existing Reserve logic
+                Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, ComponentCartItemKey, BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * BundleProduct.Quantity, InnerResponse);
+
+                if ResponseSucceeded(InnerResponse) then begin
+                    ReservedCartItemKeys.Add(ComponentCartItemKey);
+                    if IsNullGuid(BundleReservationId) and InnerJObject.ReadFrom(InnerResponse) then
+                        if InnerJObject.Get('reservationId', InnerReservationIdToken) then
+                            Evaluate(BundleReservationId, InnerReservationIdToken.AsValue().AsText());
+                end else
+                    AnyFailure := true;
             end;
-    
-            foreach JToken in JArray do begin
-                JObject := JToken.AsObject();
-                JObject.Get('optionTitle', ComponentCodeToken);
-                JObject.Get('itemNo', OptionCodeToken);
-    
-                if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
-                    // Reserve each item using existing Reserve logic
-                    Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, WooCartItemKey + '_' + BundleProduct."Option Title", BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * BundleProduct.Quantity, InnerResponse);
-                    if not ResponseSucceeded(InnerResponse) then
-                        AnyFailure := true;
-                end;
-            end;
+        end;
 
         if AnyFailure then begin
-            // In a complete implementation, this should roll back the previously reserved components.
+            // Roll back every component reserved earlier in this same bundle before failing,
+            // so the customer never ends up holding a partial bundle.
+            if ReservedCartItemKeys.Count() > 0 then
+                if not IsNullGuid(BundleReservationId) then
+                    foreach RollbackCartItemKey in ReservedCartItemKeys do
+                        ReleaseLine(CopyStr(IdempotencyKey + '_rollback_' + RollbackCartItemKey, 1, 150), CorrelationId, BundleReservationId, RollbackCartItemKey, ReleaseResponse)
+                else begin
+                    // This should never happen: components were reserved successfully but we
+                    // never captured their Reservation Header ID, so they cannot be rolled back
+                    // by GUID here. Surface it loudly rather than leaving phantom reservations
+                    // undetected - find the header by session and flag it for manual review.
+                    ManualReviewReason := CopyStr(StrSubstNo('ReserveBundle rollback could not resolve Reservation ID for bundle %1 with %2 component(s) already reserved.', BundleCode, ReservedCartItemKeys.Count()), 1, 250);
+                    RollbackHeader.SetRange("Woo Session ID", WooSessionId);
+                    RollbackHeader.SetFilter(Status, '%1|%2', RollbackHeader.Status::Reserved, RollbackHeader.Status::PendingOrder);
+                    if RollbackHeader.FindFirst() then begin
+                        RollbackHeader.Status := RollbackHeader.Status::ManualReview;
+                        RollbackHeader."Manual Review Reason" := ManualReviewReason;
+                        RollbackHeader.Modify(true);
+                        AuditMgt.LogReservation(RollbackHeader."Reservation ID", 'RollbackIdUnresolved', Format(RollbackHeader.Status::Reserved), Format(RollbackHeader.Status::ManualReview), ManualReviewReason, OperationId, CorrelationId);
+                    end else
+                        AuditMgt.LogReservation(CreateGuid(), 'RollbackIdUnresolved', '', 'Unknown', ManualReviewReason, OperationId, CorrelationId);
+                end;
+
             ResponsePayload := BuildErrorResponse('RESERVATION_FAILED', 'Failed to reserve one or more bundle components.');
             IdempotencyMgt.FailOperation(OperationId, 'RESERVATION_FAILED', 'Failed to reserve bundle.', ResponsePayload, 400);
             exit(false);
