@@ -571,6 +571,8 @@ codeunit 50100 "BCSR Reservation Service"
         AvailableBase: Decimal;
         MinAvailable: Decimal;
         Item: Record Item;
+        ComponentsJson: Text;
+        FirstComponent: Boolean;
     begin
         if not JArray.ReadFrom(OptionsJson) then begin
                 ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
@@ -590,14 +592,13 @@ codeunit 50100 "BCSR Reservation Service"
     
                 if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
                     if Item.Get(BundleProduct."Item No.") then begin
-                        AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", BundleProduct."Variant Code", LocationCode, Bucket);
+                        AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", '', LocationCode, Bucket); // Removed Variant Code for now
                         AvailabilityMgt.RecalculateBucket(Bucket);
                         AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
-
-                        // Consider component quantity required
-                        if BundleProduct.Quantity > 0 then
-                            AvailableBase := AvailableBase / BundleProduct.Quantity;
-
+                        
+                        // Consider quantity required (defaulting to 1 for now)
+                        AvailableBase := AvailableBase / 1;
+    
                         if AvailableBase < MinAvailable then
                             MinAvailable := AvailableBase;
                     end;
@@ -609,7 +610,8 @@ codeunit 50100 "BCSR Reservation Service"
             JsonPair('success', 'true', false) + ',' +
             JsonPair('reservationEnabled', 'true', false) + ',' +
             JsonPair('bundleCode', BundleCode, true) + ',' +
-            JsonPair('availableQtyBase', FormatDecimal(MinAvailable), false) +
+            JsonPair('availableQtyBase', FormatDecimal(MinAvailable), false) + ',' +
+            '"componentsAvailability":' + ComponentsJson +
             '}';
         exit(true);
     end;
