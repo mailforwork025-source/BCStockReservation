@@ -590,13 +590,14 @@ codeunit 50100 "BCSR Reservation Service"
     
                 if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
                     if Item.Get(BundleProduct."Item No.") then begin
-                        AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", '', LocationCode, Bucket); // Removed Variant Code for now
+                        AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", BundleProduct."Variant Code", LocationCode, Bucket);
                         AvailabilityMgt.RecalculateBucket(Bucket);
                         AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
-                        
-                        // Consider quantity required (defaulting to 1 for now)
-                        AvailableBase := AvailableBase / 1;
-    
+
+                        // Consider component quantity required
+                        if BundleProduct.Quantity > 0 then
+                            AvailableBase := AvailableBase / BundleProduct.Quantity;
+
                         if AvailableBase < MinAvailable then
                             MinAvailable := AvailableBase;
                     end;
@@ -652,7 +653,7 @@ codeunit 50100 "BCSR Reservation Service"
     
                 if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
                     // Reserve each item using existing Reserve logic
-                    Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, WooCartItemKey + '_' + BundleProduct."Option Title", BundleProduct."Item No.", '', LocationCode, '', Quantity * 1, InnerResponse); // Defaulted variant and qty
+                    Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, WooCartItemKey + '_' + BundleProduct."Option Title", BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * BundleProduct.Quantity, InnerResponse);
                     if not ResponseSucceeded(InnerResponse) then
                         AnyFailure := true;
                 end;

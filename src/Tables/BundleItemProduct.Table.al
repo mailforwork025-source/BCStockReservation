@@ -41,6 +41,18 @@ table 52004 "Bundle Item Product"
             FieldClass = FlowField;
             CalcFormula = lookup(Item.Description WHERE("No." = FIELD("Item No.")));
         }
+        field(7; "Variant Code"; Code[10])
+        {
+            Caption = 'Variant Code';
+            TableRelation = "Item Variant".Code WHERE ("Item No." = FIELD("Item No."));
+            DataClassification = CustomerContent;
+        }
+        field(8; "Quantity"; Decimal)
+        {
+            Caption = 'Quantity';
+            DataClassification = CustomerContent;
+            InitValue = 1;
+        }
     }
 
     keys
