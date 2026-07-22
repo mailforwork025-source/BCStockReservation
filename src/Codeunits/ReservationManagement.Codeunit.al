@@ -571,44 +571,62 @@ codeunit 50100 "BCSR Reservation Service"
         AvailableBase: Decimal;
         MinAvailable: Decimal;
         Item: Record Item;
+        ComponentsJson: Text;
+        FirstComponent: Boolean;
     begin
         if not JArray.ReadFrom(OptionsJson) then begin
-                ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
-                exit(false);
-            end;
-    
-            Setup.GetSetup();
-            if LocationCode = '' then
-                LocationCode := Setup."Website Location Code";
-    
-            MinAvailable := 9999999;
-            
-            foreach JToken in JArray do begin
-                JObject := JToken.AsObject();
-                JObject.Get('optionTitle', ComponentCodeToken);
-                JObject.Get('itemNo', OptionCodeToken);
-    
-                if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
-                    if Item.Get(BundleProduct."Item No.") then begin
-                        AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", '', LocationCode, Bucket); // Removed Variant Code for now
-                        AvailabilityMgt.RecalculateBucket(Bucket);
-                        AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
-                        
-                        // Consider quantity required (defaulting to 1 for now)
-                        AvailableBase := AvailableBase / 1;
-    
-                        if AvailableBase < MinAvailable then
-                            MinAvailable := AvailableBase;
-                    end;
+            ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
+            exit(false);
+        end;
+
+        Setup.GetSetup();
+        if LocationCode = '' then
+            LocationCode := Setup."Website Location Code";
+
+        MinAvailable := 9999999;
+        ComponentsJson := '[';
+        FirstComponent := true;
+        
+        foreach JToken in JArray do begin
+            JObject := JToken.AsObject();
+            JObject.Get('optionTitle', ComponentCodeToken);
+            JObject.Get('itemNo', OptionCodeToken);
+
+            AvailableBase := 0;
+
+            if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
+                if Item.Get(BundleProduct."Item No.") then begin
+                    AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", '', LocationCode, Bucket);
+                    AvailabilityMgt.RecalculateBucket(Bucket);
+                    AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
+                    
+                    AvailableBase := AvailableBase / 1;
+
+                    if AvailableBase < MinAvailable then
+                        MinAvailable := AvailableBase;
                 end;
             end;
+
+            if not FirstComponent then
+                ComponentsJson += ',';
+            FirstComponent := false;
+            
+            ComponentsJson += '{' +
+                JsonPair('optionTitle', ComponentCodeToken.AsValue().AsText(), true) + ',' +
+                JsonPair('itemNo', OptionCodeToken.AsValue().AsText(), true) + ',' +
+                JsonPair('availableQtyBase', FormatDecimal(AvailableBase), false) +
+                '}';
+        end;
+
+        ComponentsJson += ']';
 
         ResponsePayload :=
             '{' +
             JsonPair('success', 'true', false) + ',' +
             JsonPair('reservationEnabled', 'true', false) + ',' +
             JsonPair('bundleCode', BundleCode, true) + ',' +
-            JsonPair('availableQtyBase', FormatDecimal(MinAvailable), false) +
+            JsonPair('availableQtyBase', FormatDecimal(MinAvailable), false) + ',' +
+            '"componentsAvailability":' + ComponentsJson +
             '}';
         exit(true);
     end;
