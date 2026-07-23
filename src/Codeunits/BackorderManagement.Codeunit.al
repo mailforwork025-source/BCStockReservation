@@ -13,6 +13,7 @@ codeunit 50101 "BCSR Backorder Service"
         RequestPayload: Text;
         RequestHash: Text[250];
         QtyBase: Decimal;
+        IsNewBackorderLine: Boolean;
     begin
         if IdempotencyKey = '' then
             exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
@@ -39,7 +40,8 @@ codeunit 50101 "BCSR Backorder Service"
             exit(FailOperation(OperationId, IdempotencyMgt, 'UOM_NOT_FOUND', CopyStr(GetLastErrorText(), 1, 250), ResponsePayload));
 
         EnsureHeader(WooOrderId, WooOrderNo, BCSalesOrderSystemId, BCSalesOrderNo, CorrelationId, Header);
-        if not GetLine(WooOrderId, WooOrderLineId, Line) then begin
+        IsNewBackorderLine := not GetLine(WooOrderId, WooOrderLineId, Line);
+        if IsNewBackorderLine then begin
             Line.Init();
             Line."Backorder ID" := Header."Backorder ID";
             Line."Line No." := NextLineNo(Header."Backorder ID");
@@ -73,6 +75,10 @@ codeunit 50101 "BCSR Backorder Service"
             '}';
         IdempotencyMgt.CompleteOperation(OperationId, Header."Backorder ID", ResponsePayload, 200);
         AuditMgt.LogBackorder(Header."Backorder ID", 'CreateOrUpdateBackorder', '', Format(Line.Status), 'Backorder linked to WooCommerce and BC sales line.', OperationId, CorrelationId);
+
+        if IsNewBackorderLine then
+            SendBackorderNotification(Header, Line, AuditMgt, OperationId, CorrelationId);
+
         exit(true);
     end;
 
@@ -119,6 +125,42 @@ codeunit 50101 "BCSR Backorder Service"
         Line.SetRange("Woo Order ID", WooOrderId);
         Line.SetRange("Woo Order Line ID", WooOrderLineId);
         exit(Line.FindFirst());
+    end;
+
+    local procedure SendBackorderNotification(Header: Record "BCSR Backorder Header"; Line: Record "BCSR Backorder Line"; var AuditMgt: Codeunit "BCSR Audit Mgt."; OperationId: Guid; CorrelationId: Text[100])
+    var
+        Setup: Record "BCSR Setup";
+        Subject: Text[250];
+        Body: Text;
+    begin
+        Setup.GetSetup();
+        if Setup."Backorder Notification Email" = '' then
+            exit;
+
+        Subject := CopyStr(StrSubstNo('New Backorder: %1', Line."Item No."), 1, 250);
+        Body :=
+            'A new backorder line was created.' + '<br>' +
+            '<br>' +
+            'Item No.: ' + Line."Item No." + '<br>' +
+            'Quantity: ' + Format(Line.Quantity) + '<br>' +
+            'WooCommerce Order No.: ' + Header."Woo Order No." + '<br>' +
+            'BC Sales Order No.: ' + Header."BC Sales Order No." + '<br>' +
+            'Backorder ID: ' + Format(Header."Backorder ID") + '<br>' +
+            '<br>' +
+            'Find this record in Business Central via the Backorder Header List, filtered to WooCommerce Order No. ' + Header."Woo Order No." + '.';
+
+        if not TrySendEmail(Setup."Backorder Notification Email", Subject, Body) then
+            AuditMgt.LogFailure(Header."Backorder ID", 'BackorderNotificationFailed', CopyStr(GetLastErrorText(), 1, 250), OperationId, CorrelationId);
+    end;
+
+    [TryFunction]
+    local procedure TrySendEmail(ToAddress: Text[250]; Subject: Text[250]; Body: Text)
+    var
+        EmailMessage: Codeunit "Email Message";
+        Email: Codeunit Email;
+    begin
+        EmailMessage.Create(ToAddress, Subject, Body, true);
+        Email.Send(EmailMessage);
     end;
 
     local procedure NextLineNo(BackorderId: Guid): Integer

@@ -70,6 +70,11 @@ table 50100 "BCSR Setup"
             Caption = 'Last Bucket Rebuild';
             Editable = false;
         }
+        field(120; "Backorder Notification Email"; Text[250])
+        {
+            Caption = 'Backorder Notification Email';
+            ExtendedDatatype = EMail;
+        }
     }
 
     keys
