@@ -523,6 +523,7 @@ codeunit 50100 "BCSR Reservation Service"
         Item: Record Item;
         AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
         AvailableBase: Decimal;
+        BackorderEnabledText: Text;
     begin
         if not Item.Get(ItemNo) then begin
             ResponsePayload := BuildErrorResponse('ITEM_NOT_FOUND', StrSubstNo('Item %1 was not found.', ItemNo));
@@ -540,10 +541,15 @@ codeunit 50100 "BCSR Reservation Service"
         AvailabilityMgt.GetOrCreateLockedBucket(ItemNo, VariantCode, LocationCode, Bucket);
         AvailabilityMgt.RecalculateBucket(Bucket);
         AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
+        if Item."BCSR Enable Backorder" then
+            BackorderEnabledText := 'true'
+        else
+            BackorderEnabledText := 'false';
         ResponsePayload :=
             '{' +
             JsonPair('success', 'true', false) + ',' +
             JsonPair('reservationEnabled', 'true', false) + ',' +
+            JsonPair('backorderEnabled', BackorderEnabledText, false) + ',' +
             JsonPair('itemNo', ItemNo, true) + ',' +
             JsonPair('baseUomCode', Item."Base Unit of Measure", true) + ',' +
             JsonPair('variantCode', VariantCode, true) + ',' +
