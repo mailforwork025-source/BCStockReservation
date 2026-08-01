@@ -648,58 +648,39 @@ codeunit 50100 "BCSR Reservation Service"
         OptionCodeToken: JsonToken;
         BundleProduct: Record "Bundle Item Product";
         IdempotencyMgt: Codeunit "BCSR Idempotency Mgt.";
-        Header: Record "BCSR Reservation Header";
-        Line: Record "BCSR Reservation Line";
         OperationId: Guid;
         RequestPayload: Text;
         RequestHash: Text[250];
         AnyFailure: Boolean;
         InnerResponse: Text;
-        InnerJson: JsonObject;
-        InnerToken: JsonToken;
-        AggReservedBase: Decimal;
-        AggBackorderBase: Decimal;
     begin
         // Basic implementation for reserving components iteratively
         if IdempotencyKey = '' then
                 exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
-
+    
             RequestPayload := StrSubstNo('reserveBundle|%1|%2|%3', WooSessionId, WooCartItemKey, BundleCode);
             RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
             if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
                 exit(ResponseSucceeded(ResponsePayload));
-
+    
             OperationId := IdempotencyMgt.StartOperation(IdempotencyKey, 'ReserveBundle', RequestHash, RequestPayload, CorrelationId);
-
+    
             if not JArray.ReadFrom(OptionsJson) then begin
                 ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
                 IdempotencyMgt.FailOperation(OperationId, 'INVALID_JSON', 'Options must be a valid JSON array.', ResponsePayload, 400);
                 exit(false);
             end;
-
+    
             foreach JToken in JArray do begin
                 JObject := JToken.AsObject();
                 JObject.Get('optionTitle', ComponentCodeToken);
                 JObject.Get('itemNo', OptionCodeToken);
-
+    
                 if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
                     // Reserve each item using existing Reserve logic
                     Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, WooCartItemKey + '_' + BundleProduct."Option Title", BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * BundleProduct.Quantity, InnerResponse);
                     if not ResponseSucceeded(InnerResponse) then
-                        AnyFailure := true
-                    else begin
-                        // Aggregate each component's reserved/backorder qty so
-                        // the bundle-level summary line below (and the response
-                        // PHP reads) reflects the whole bundle, not just the
-                        // last component reserved.
-                        Clear(InnerJson);
-                        if InnerJson.ReadFrom(InnerResponse) then begin
-                            if InnerJson.Get('reservedQtyBase', InnerToken) then
-                                AggReservedBase += InnerToken.AsValue().AsDecimal();
-                            if InnerJson.Get('backorderQtyBase', InnerToken) then
-                                AggBackorderBase += InnerToken.AsValue().AsDecimal();
-                        end;
-                    end;
+                        AnyFailure := true;
                 end;
             end;
 
@@ -710,51 +691,12 @@ codeunit 50100 "BCSR Reservation Service"
             exit(false);
         end;
 
-        // Every inner Reserve() call above shares one session-level header
-        // (EnsureSessionHeader is keyed only by WooSessionId) - its
-        // Reservation ID/Expires At therefore already apply to the whole
-        // bundle line, same as a single-item Reserve(). A dedicated summary
-        // line keyed by the bundle's own, un-suffixed WooCartItemKey
-        // (distinct from each component's "<key>_<Option Title>" line used
-        // above for per-item stock bucketing) carries the bundle's aggregate
-        // reserved/backorder quantity, so this response gives callers the
-        // exact same reservationId/reservationLineId/expiresAt shape a
-        // single-item reservation does - previously this response omitted
-        // all of that, so a bundle line never got a real reservation
-        // countdown, checkout-conversion linkage, or backorder detection.
-        EnsureSessionHeader(WooSessionId, WooCustomerId, WooCartHash, CorrelationId, OperationId, Header);
-
-        if not GetLine(Header."Reservation ID", WooCartItemKey, Line) then begin
-            Line.Init();
-            Line."Reservation ID" := Header."Reservation ID";
-            Line."Line No." := NextLineNo(Header."Reservation ID");
-            Line."Woo Cart Item Key" := WooCartItemKey;
-        end;
-        Line.Quantity := Quantity;
-        Line."Quantity (Base)" := Quantity;
-        Line."Reserved Qty. (Base)" := AggReservedBase;
-        Line."Backorder Qty. (Base)" := AggBackorderBase;
-        Line.Status := Line.Status::Reserved;
-        Line."Correlation ID" := CorrelationId;
-        if IsNullGuid(Line."Reservation Line ID") then
-            Line.Insert(true)
-        else
-            Line.Modify(true);
-
         ResponsePayload :=
             '{' +
             JsonPair('success', 'true', false) + ',' +
-            JsonPair('reservationEnabled', 'true', false) + ',' +
-            JsonPair('bundleCode', BundleCode, true) + ',' +
-            JsonPair('reservationId', Format(Header."Reservation ID"), true) + ',' +
-            JsonPair('reservationLineId', Format(Line."Reservation Line ID"), true) + ',' +
-            JsonPair('status', Format(Line.Status), true) + ',' +
-            JsonPair('reservedQtyBase', FormatDecimal(AggReservedBase), false) + ',' +
-            JsonPair('backorderQtyBase', FormatDecimal(AggBackorderBase), false) + ',' +
-            JsonPair('expiresAt', Format(Header."Expires At", 0, 9), true) + ',' +
-            JsonPair('correlationId', CorrelationId, true) +
+            JsonPair('bundleCode', BundleCode, true) +
             '}';
-        IdempotencyMgt.CompleteOperation(OperationId, Header."Reservation ID", ResponsePayload, 200);
+        IdempotencyMgt.CompleteOperation(OperationId, CreateGuid(), ResponsePayload, 200);
         exit(true);
     end;
 
