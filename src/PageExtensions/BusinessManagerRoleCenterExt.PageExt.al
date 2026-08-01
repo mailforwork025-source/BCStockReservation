@@ -1,4 +1,4 @@
-pageextension 51003 "BCSR Biz Mgr RC Ext." extends "Business Manager Role Center"
+pageextension 61003 "BCSR Biz Mgr RC Ext." extends "Business Manager Role Center"
 {
     layout
     {

@@ -1,4 +1,4 @@
-table 50100 "BCSR Setup"
+table 60100 "BCSR Setup"
 {
     Caption = 'BC Stock Reservation Setup';
     DataClassification = CustomerContent;

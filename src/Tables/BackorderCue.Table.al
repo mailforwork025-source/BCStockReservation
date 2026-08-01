@@ -1,4 +1,4 @@
-table 51001 "BCSR Backorder Cue"
+table 61001 "BCSR Backorder Cue"
 {
     Caption = 'BCSR Backorder Cue';
     DataClassification = SystemMetadata;

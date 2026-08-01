@@ -1,4 +1,4 @@
-page 50108 "BCSR Reservation Lines"
+page 60108 "BCSR Reservation Lines"
 {
     PageType = ListPart;
     ApplicationArea = All;

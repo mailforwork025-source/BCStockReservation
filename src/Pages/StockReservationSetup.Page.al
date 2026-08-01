@@ -1,4 +1,4 @@
-page 50100 "Stock Reservation Setup"
+page 60100 "Stock Reservation Setup"
 {
     PageType = Card;
     ApplicationArea = All;

@@ -1,4 +1,4 @@
-enum 50101 "BCSR Backorder Status"
+enum 60101 "BCSR Backorder Status"
 {
     Extensible = true;
 

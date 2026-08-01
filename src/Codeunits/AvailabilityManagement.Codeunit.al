@@ -1,4 +1,4 @@
-codeunit 50106 "BCSR Availability Mgt."
+codeunit 60106 "BCSR Availability Mgt."
 {
     procedure GetOrCreateLockedBucket(ItemNo: Code[20]; VariantCode: Code[10]; LocationCode: Code[10]; var Bucket: Record "BCSR Availability Bucket")
 var

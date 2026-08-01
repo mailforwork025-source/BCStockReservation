@@ -1,4 +1,4 @@
-codeunit 50103 "Reservation Setup Mgt."
+codeunit 60103 "Reservation Setup Mgt."
 {
     procedure ScheduleExpirationJob()
     var

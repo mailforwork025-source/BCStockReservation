@@ -1,4 +1,4 @@
-page 52032 "BCSR Delivery Timeline Card"
+page 62032 "BCSR Delivery Timeline Card"
 {
     PageType = Card;
     SourceTable = "BCSR Delivery Timeline";

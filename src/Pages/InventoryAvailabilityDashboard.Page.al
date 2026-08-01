@@ -1,4 +1,4 @@
-page 50104 "Inventory Avail. Dashboard"
+page 60104 "Inventory Avail. Dashboard"
 {
     PageType = List;
     ApplicationArea = All;

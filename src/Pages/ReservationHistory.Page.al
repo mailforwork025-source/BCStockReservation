@@ -1,4 +1,4 @@
-page 50102 "Reservation History"
+page 60102 "Reservation History"
 {
     PageType = List;
     ApplicationArea = All;

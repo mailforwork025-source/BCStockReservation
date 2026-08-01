@@ -1,4 +1,4 @@
-page 51002 "BCSR Backorder Activities"
+page 61002 "BCSR Backorder Activities"
 {
     PageType = CardPart;
     Caption = 'WooCommerce Backorders';

@@ -1,4 +1,4 @@
-table 52005 "Bundle Item Combination"
+table 62005 "Bundle Item Combination"
 {
     Caption = 'Bundle Item Combination';
     DataClassification = CustomerContent;

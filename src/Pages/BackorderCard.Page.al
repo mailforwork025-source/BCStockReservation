@@ -1,4 +1,4 @@
-page 50118 "BCSR Backorder Card"
+page 60118 "BCSR Backorder Card"
 {
     PageType = Card;
     ApplicationArea = All;

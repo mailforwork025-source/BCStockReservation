@@ -1,4 +1,4 @@
-page 50105 "BCSR Failure Queue"
+page 60105 "BCSR Failure Queue"
 {
     PageType = List;
     ApplicationArea = All;

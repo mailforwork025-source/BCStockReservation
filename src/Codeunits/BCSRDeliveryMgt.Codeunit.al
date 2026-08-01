@@ -1,4 +1,4 @@
-codeunit 52030 "BCSR Delivery Mgt."
+codeunit 62030 "BCSR Delivery Mgt."
 {
     procedure CalculateDeliveryTimeline(ItemNo: Code[20]; Quantity: Decimal; var DeliveryDays: Integer; var EstimatedDate: Date): Boolean
     var

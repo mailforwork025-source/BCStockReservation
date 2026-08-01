@@ -1,4 +1,4 @@
-codeunit 50105 "Reservation Install Mgt."
+codeunit 60105 "Reservation Install Mgt."
 {
     Subtype = Install;
 

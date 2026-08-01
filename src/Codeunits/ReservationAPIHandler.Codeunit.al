@@ -1,4 +1,4 @@
-codeunit 50104 "BCSR API Actions"
+codeunit 60104 "BCSR API Actions"
 {
     InherentPermissions = X;
     [ServiceEnabled]
@@ -130,7 +130,7 @@ codeunit 50104 "BCSR API Actions"
     [ServiceEnabled]
     procedure Ping(): Text
     begin
-        exit('PONG FROM 50104');
+        exit('PONG FROM 60104');
     end;
 
     [ServiceEnabled]

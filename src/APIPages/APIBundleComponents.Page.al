@@ -1,4 +1,4 @@
-page 52001 APIBundleComponents
+page 62001 APIBundleComponents
 {
     // Exposes the component "slots" of a bundle (e.g. "Color", "Size") so the
     // WooCommerce plugin can render one dropdown per slot. Previously the

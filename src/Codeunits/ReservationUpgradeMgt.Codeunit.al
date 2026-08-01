@@ -1,4 +1,4 @@
-codeunit 50110 "BCSR Upgrade Mgt."
+codeunit 60110 "BCSR Upgrade Mgt."
 {
     Subtype = Upgrade;
 

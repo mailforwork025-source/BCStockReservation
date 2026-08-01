@@ -1,4 +1,4 @@
-page 50101 "Active Reservations"
+page 60101 "Active Reservations"
 {
     PageType = List;
     ApplicationArea = All;

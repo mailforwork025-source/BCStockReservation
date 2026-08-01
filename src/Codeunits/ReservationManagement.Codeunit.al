@@ -1,4 +1,4 @@
-codeunit 50100 "BCSR Reservation Service"
+codeunit 60100 "BCSR Reservation Service"
 {
     procedure Reserve(IdempotencyKey: Text[150]; CorrelationId: Text[100]; WooSessionId: Text[100]; WooCustomerId: Text[100]; WooCartHash: Text[100]; WooCartItemKey: Text[100]; ItemNo: Code[20]; VariantCode: Code[10]; LocationCode: Code[10]; UomCode: Code[10]; Quantity: Decimal; var ResponsePayload: Text): Boolean
     var

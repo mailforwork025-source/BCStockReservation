@@ -1,4 +1,4 @@
-permissionset 50100 "BCSR ADMIN"
+permissionset 60100 "BCSR ADMIN"
 {
     Assignable = true;
     Caption = 'BC Stock Reservation Admin';
@@ -72,7 +72,7 @@ permissionset 50100 "BCSR ADMIN"
         codeunit "Reservation Setup Mgt." = X;
 }
 
-permissionset 50101 "BCSR API"
+permissionset 60101 "BCSR API"
 {
     Assignable = true;
     Caption = 'BC Stock Reservation API';

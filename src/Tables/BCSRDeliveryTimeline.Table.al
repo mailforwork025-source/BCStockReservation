@@ -1,4 +1,4 @@
-table 52030 "BCSR Delivery Timeline"
+table 62030 "BCSR Delivery Timeline"
 {
     DataClassification = CustomerContent;
     Caption = 'Delivery Timeline Rule';

@@ -1,4 +1,4 @@
-page 52013 "Bundle Item Options Part"
+page 62013 "Bundle Item Options Part"
 {
     PageType = ListPart;
     SourceTable = "Bundle Item Option";

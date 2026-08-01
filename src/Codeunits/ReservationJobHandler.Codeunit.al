@@ -1,4 +1,4 @@
-codeunit 50102 "Reservation Job Handler"
+codeunit 60102 "Reservation Job Handler"
 {
     TableNo = "Job Queue Entry";
 

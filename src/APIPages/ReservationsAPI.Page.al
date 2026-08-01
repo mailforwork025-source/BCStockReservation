@@ -1,4 +1,4 @@
-page 50110 "BCSR Reservations API"
+page 60110 "BCSR Reservations API"
 {
     PageType = API;
     Caption = 'BCSR Reservations API';

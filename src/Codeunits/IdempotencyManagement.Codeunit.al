@@ -1,4 +1,4 @@
-codeunit 50107 "BCSR Idempotency Mgt."
+codeunit 60107 "BCSR Idempotency Mgt."
 {
     procedure StartOperation(IdempotencyKey: Text[150]; OperationType: Text[30]; RequestHash: Text[250]; RequestPayload: Text; CorrelationId: Text[100]): Guid
     var

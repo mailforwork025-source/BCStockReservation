@@ -1,4 +1,4 @@
-page 50109 "BCSR Reservation Card"
+page 60109 "BCSR Reservation Card"
 {
     PageType = Card;
     ApplicationArea = All;

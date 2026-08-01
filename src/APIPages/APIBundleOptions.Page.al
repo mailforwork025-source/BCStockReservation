@@ -1,4 +1,4 @@
-page 52002 APIBundleOptions
+page 62002 APIBundleOptions
 {
     // Exposes the selectable values within each bundle component slot (e.g.
     // "Red" -> item FURN-RED-01) so the WooCommerce plugin can populate each

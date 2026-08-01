@@ -1,4 +1,4 @@
-page 50107 "BCSR Audit Log"
+page 60107 "BCSR Audit Log"
 {
     PageType = List;
     ApplicationArea = All;

@@ -1,4 +1,4 @@
-page 52010 "Bundle List"
+page 62010 "Bundle List"
 {
     PageType = List;
     ApplicationArea = All;

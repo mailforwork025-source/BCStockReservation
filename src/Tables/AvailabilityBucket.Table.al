@@ -1,4 +1,4 @@
-table 50101 "BCSR Availability Bucket"
+table 60101 "BCSR Availability Bucket"
 {
     Caption = 'BCSR Availability Bucket';
     DataClassification = CustomerContent;

@@ -1,4 +1,4 @@
-enum 50100 "BCSR Reservation Status"
+enum 60100 "BCSR Reservation Status"
 {
     Extensible = true;
 

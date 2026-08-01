@@ -1,4 +1,4 @@
-page 50103 "Backorder List"
+page 60103 "Backorder List"
 {
     PageType = List;
     ApplicationArea = All;

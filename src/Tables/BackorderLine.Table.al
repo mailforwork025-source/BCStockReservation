@@ -1,4 +1,4 @@
-table 50108 "BCSR Backorder Line"
+table 60108 "BCSR Backorder Line"
 {
     Caption = 'BCSR Backorder Line';
     DataClassification = CustomerContent;

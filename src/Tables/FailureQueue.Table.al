@@ -1,4 +1,4 @@
-table 50105 "BCSR Failure Queue"
+table 60105 "BCSR Failure Queue"
 {
     Caption = 'BCSR Failure Queue';
     DataClassification = CustomerContent;

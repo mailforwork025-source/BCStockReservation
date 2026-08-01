@@ -1,4 +1,4 @@
-table 50109 "BCSR Schema Version"
+table 60109 "BCSR Schema Version"
 {
     Caption = 'BCSR Schema Version';
     DataClassification = SystemMetadata;

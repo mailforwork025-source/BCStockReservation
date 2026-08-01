@@ -1,4 +1,4 @@
-page 52016 "Bundle Shops Factbox"
+page 62016 "Bundle Shops Factbox"
 {
     PageType = ListPart;
     Caption = 'wooCommerce Shops';

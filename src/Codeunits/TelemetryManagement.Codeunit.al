@@ -1,4 +1,4 @@
-codeunit 50109 "BCSR Telemetry Mgt."
+codeunit 60109 "BCSR Telemetry Mgt."
 {
     procedure LogEvent(EventId: Text[50]; Message: Text[250]; CorrelationId: Text[100])
     var

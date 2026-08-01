@@ -1,4 +1,4 @@
-enum 50102 "BCSR Operation Status"
+enum 60102 "BCSR Operation Status"
 {
     Extensible = true;
 

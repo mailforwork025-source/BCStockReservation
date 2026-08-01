@@ -1,4 +1,4 @@
-table 50104 "BCSR Operation Log"
+table 60104 "BCSR Operation Log"
 {
     Caption = 'BCSR Operation Log';
     DataClassification = CustomerContent;

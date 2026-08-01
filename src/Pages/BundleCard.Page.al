@@ -1,4 +1,4 @@
-page 52011 "Bundle Card"
+page 62011 "Bundle Card"
 {
     PageType = Document;
     SourceTable = "Bundle Header";

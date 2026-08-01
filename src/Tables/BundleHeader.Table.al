@@ -1,4 +1,4 @@
-table 52000 "Bundle Header"
+table 62000 "Bundle Header"
 {
     Caption = 'Bundle Header';
     DataClassification = CustomerContent;

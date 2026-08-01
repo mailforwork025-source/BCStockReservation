@@ -1,4 +1,4 @@
-codeunit 50108 "BCSR Audit Mgt."
+codeunit 60108 "BCSR Audit Mgt."
 {
     procedure LogReservation(ReservationId: Guid; EventType: Text[50]; FromStatus: Text[30]; ToStatus: Text[30]; Message: Text[250]; OperationId: Guid; CorrelationId: Text[100])
     begin

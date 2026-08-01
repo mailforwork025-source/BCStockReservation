@@ -1,4 +1,4 @@
-codeunit 50199 "BCSR Test API Diag"
+codeunit 60199 "BCSR Test API Diag"
 {
     
     [ServiceEnabled]
