@@ -49,6 +49,14 @@ permissionset 50100 "BCSR ADMIN"
         page "BCSR Backorder Lines API" = X,
         page "BCSR Operations API" = X,
         page "BCSR Failures API" = X,
+        page "BCSR Delivery Timeline Card" = X,
+        page "BCSR Delivery Timelines" = X,
+        page "Bundle Card" = X,
+        page "Bundle List" = X,
+        page "Bundle Shops Factbox" = X,
+        page "Bundle Item Combinations Part" = X,
+        page "Bundle Item Options Part" = X,
+        page "Bundle Item Products Part" = X,
         codeunit "BCSR Reservation Service" = X,
         codeunit "BCSR Backorder Service" = X,
         codeunit "BCSR API Actions" = X,
@@ -56,7 +64,12 @@ permissionset 50100 "BCSR ADMIN"
         codeunit "BCSR Idempotency Mgt." = X,
         codeunit "BCSR Audit Mgt." = X,
         codeunit "BCSR Telemetry Mgt." = X,
-        codeunit "BCSR Test API Diag" = X;
+        codeunit "BCSR Test API Diag" = X,
+        codeunit "BCSR Delivery Mgt." = X,
+        codeunit "BCSR Upgrade Mgt." = X,
+        codeunit "Reservation Install Mgt." = X,
+        codeunit "Reservation Job Handler" = X,
+        codeunit "Reservation Setup Mgt." = X;
 }
 
 permissionset 50101 "BCSR API"
@@ -77,6 +90,8 @@ permissionset 50101 "BCSR API"
         tabledata "Bundle Header" = RIMD,
         tabledata "Bundle Item Option" = RIMD,
         tabledata "Bundle Item Product" = RIMD,
+        tabledata "Bundle Item Combination" = RIMD,
+        tabledata "BCSR Delivery Timeline" = RIMD,
         page APIBundles = X,
         page APIBundleComponents = X,
         page APIBundleOptions = X,
@@ -88,6 +103,7 @@ permissionset 50101 "BCSR API"
         codeunit "BCSR Audit Mgt." = X,
         codeunit "BCSR Test API" = X,
         codeunit "BCSR Test API Diag" = X,
+        codeunit "BCSR Delivery Mgt." = X,
         tabledata Item = RIMD;
 
     }
