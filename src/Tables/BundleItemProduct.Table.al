@@ -62,6 +62,21 @@ table 62004 "Bundle Item Product"
             Caption = 'Color Hex Code';
             DataClassification = CustomerContent;
         }
+        field(10; "Display Label"; Text[50])
+        {
+            // Short text shown on the pill/swatch instead of "Item
+            // Description" - optional, blank falls back to that existing
+            // behavior.
+            Caption = 'Display Label';
+            DataClassification = CustomerContent;
+        }
+        field(11; "Image URL"; Text[250])
+        {
+            // Swaps the main product photo when this option is selected on
+            // the WooCommerce bundle UI - optional, blank means no swap.
+            Caption = 'Image URL';
+            DataClassification = CustomerContent;
+        }
     }
 
     keys

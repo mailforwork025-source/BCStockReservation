@@ -34,6 +34,14 @@ page 62014 "Bundle Item Products Part"
                 {
                     ApplicationArea = All;
                 }
+                field("Display Label"; Rec."Display Label")
+                {
+                    ApplicationArea = All;
+                }
+                field("Image URL"; Rec."Image URL")
+                {
+                    ApplicationArea = All;
+                }
             }
         }
     }

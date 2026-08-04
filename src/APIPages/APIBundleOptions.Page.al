@@ -63,6 +63,14 @@ page 62002 APIBundleOptions
                 {
                     Caption = 'Color Hex Code';
                 }
+                field(displayLabel; Rec."Display Label")
+                {
+                    Caption = 'Display Label';
+                }
+                field(imageUrl; Rec."Image URL")
+                {
+                    Caption = 'Image URL';
+                }
             }
         }
     }
