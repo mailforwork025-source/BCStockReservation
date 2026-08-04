@@ -59,6 +59,10 @@ page 62002 APIBundleOptions
                 {
                     Caption = 'Variant Code';
                 }
+                field(colorHex; Rec."Color Hex Code")
+                {
+                    Caption = 'Color Hex Code';
+                }
             }
         }
     }

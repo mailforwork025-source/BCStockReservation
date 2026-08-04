@@ -53,6 +53,15 @@ table 62004 "Bundle Item Product"
             DataClassification = CustomerContent;
             InitValue = 1;
         }
+        field(9; "Color Hex Code"; Text[10])
+        {
+            // Swatch color for this option on the WooCommerce bundle UI (e.g.
+            // "#RRGGBB"), only meaningful for color-type components ("Color",
+            // "Frame Color", etc.) - left blank for non-color options, which
+            // the plugin renders as plain text pills instead of swatches.
+            Caption = 'Color Hex Code';
+            DataClassification = CustomerContent;
+        }
     }
 
     keys

@@ -30,6 +30,10 @@ page 62014 "Bundle Item Products Part"
                 {
                     ApplicationArea = All;
                 }
+                field("Color Hex Code"; Rec."Color Hex Code")
+                {
+                    ApplicationArea = All;
+                }
             }
         }
     }
