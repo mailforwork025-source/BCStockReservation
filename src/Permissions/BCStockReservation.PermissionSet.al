@@ -59,6 +59,7 @@ permissionset 60100 "BCSR ADMIN"
         page "Bundle Combination Lines Part" = X,
         page "Bundle Item Options Part" = X,
         page "Bundle Item Products Part" = X,
+        report "BCSR Bulk Enable Reservation" = X,
         codeunit "BCSR Reservation Service" = X,
         codeunit "BCSR Backorder Service" = X,
         codeunit "BCSR API Actions" = X,
