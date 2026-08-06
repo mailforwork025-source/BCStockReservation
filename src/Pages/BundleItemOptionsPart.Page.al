@@ -18,6 +18,10 @@ page 62013 "Bundle Item Options Part"
                 {
                     ApplicationArea = All;
                 }
+                field("Display Style"; Rec."Display Style")
+                {
+                    ApplicationArea = All;
+                }
             }
         }
     }

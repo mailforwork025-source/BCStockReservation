@@ -21,6 +21,14 @@ table 62003 "Bundle Item Option"
             Caption = 'Display Order';
             DataClassification = CustomerContent;
         }
+        field(4; "Display Style"; Option)
+        {
+            Caption = 'Display Style';
+            OptionMembers = Tile,Capsule;
+            OptionCaption = 'Tile,Capsule';
+            InitValue = Capsule;
+            DataClassification = CustomerContent;
+        }
     }
 
     keys

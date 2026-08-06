@@ -50,6 +50,10 @@ page 62001 APIBundleComponents
                 {
                     Caption = 'Display Order';
                 }
+                field(displayStyle; Rec."Display Style")
+                {
+                    Caption = 'Display Style';
+                }
             }
         }
     }

@@ -39,7 +39,7 @@ page 62011 "Bundle Card"
                 SubPageLink = "Bundle Code" = field("Code");
                 Caption = 'Bundle Products';
             }
-            part("Bundle Combinations"; "Bundle Item Combinations Part")
+            part("Bundle Combinations"; "Bundle Combination Header Part")
             {
                 ApplicationArea = All;
                 SubPageLink = "Bundle Code" = field("Code");
