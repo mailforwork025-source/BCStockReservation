@@ -1,4 +1,4 @@
-table 62005 "Bundle Combination Header"
+table 62007 "Bundle Combination Header"
 {
     Caption = 'Bundle Combination Header';
     DataClassification = CustomerContent;

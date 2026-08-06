@@ -1,4 +1,4 @@
-page 62015 "Bundle Combination Header Part"
+page 62021 "Bundle Combination Header Part"
 {
     PageType = ListPart;
     SourceTable = "Bundle Combination Header";
