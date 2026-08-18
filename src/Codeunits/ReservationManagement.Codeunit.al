@@ -600,19 +600,28 @@ codeunit 60100 "BCSR Reservation Service"
 
             AvailableBase := 0;
 
-            if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
-                if Item.Get(BundleProduct."Item No.") then begin
-                    AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", BundleProduct."Variant Code", LocationCode, Bucket);
-                    AvailabilityMgt.RecalculateBucket(Bucket);
-                    AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
+            if not FindBundleProduct(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode(), BundleProduct) then begin
+                // A requested component that doesn't match any Bundle Item
+                // Product row must never be silently treated as "0 available" -
+                // that's indistinguishable from genuine out-of-stock and would
+                // hide a real data/lookup problem (e.g. the whitespace-title
+                // mismatch this guarded against) behind a misleadingly normal-
+                // looking response.
+                ResponsePayload := BuildErrorResponse('BUNDLE_COMPONENT_NOT_FOUND', StrSubstNo('Component "%1" with item %2 was not found on bundle %3.', ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsText(), BundleCode));
+                exit(false);
+            end;
 
-                    // Consider component quantity required
-                    if BundleProduct.Quantity > 0 then
-                        AvailableBase := AvailableBase / BundleProduct.Quantity;
+            if Item.Get(BundleProduct."Item No.") then begin
+                AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", BundleProduct."Variant Code", LocationCode, Bucket);
+                AvailabilityMgt.RecalculateBucket(Bucket);
+                AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
 
-                    if AvailableBase < MinAvailable then
-                        MinAvailable := AvailableBase;
-                end;
+                // Consider component quantity required
+                if BundleProduct.Quantity > 0 then
+                    AvailableBase := AvailableBase / BundleProduct.Quantity;
+
+                if AvailableBase < MinAvailable then
+                    MinAvailable := AvailableBase;
             end;
 
             if not FirstComponent then
@@ -648,55 +657,134 @@ codeunit 60100 "BCSR Reservation Service"
         OptionCodeToken: JsonToken;
         BundleProduct: Record "Bundle Item Product";
         IdempotencyMgt: Codeunit "BCSR Idempotency Mgt.";
+        AuditMgt: Codeunit "BCSR Audit Mgt.";
+        Header: Record "BCSR Reservation Header";
+        Line: Record "BCSR Reservation Line";
         OperationId: Guid;
         RequestPayload: Text;
         RequestHash: Text[250];
-        AnyFailure: Boolean;
         InnerResponse: Text;
+        InnerJson: JsonObject;
+        InnerToken: JsonToken;
+        AggReservedBase: Decimal;
+        AggBackorderBase: Decimal;
+        ReservedComponentKeys: List of [Text];
+        ComponentKey: Text;
+        FailedItemNo: Code[20];
+        RollbackResponse: Text;
     begin
-        // Basic implementation for reserving components iteratively
         if IdempotencyKey = '' then
-                exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
-    
-            RequestPayload := StrSubstNo('reserveBundle|%1|%2|%3', WooSessionId, WooCartItemKey, BundleCode);
-            RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
-            if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
-                exit(ResponseSucceeded(ResponsePayload));
-    
-            OperationId := IdempotencyMgt.StartOperation(IdempotencyKey, 'ReserveBundle', RequestHash, RequestPayload, CorrelationId);
-    
-            if not JArray.ReadFrom(OptionsJson) then begin
-                ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
-                IdempotencyMgt.FailOperation(OperationId, 'INVALID_JSON', 'Options must be a valid JSON array.', ResponsePayload, 400);
-                exit(false);
-            end;
-    
-            foreach JToken in JArray do begin
-                JObject := JToken.AsObject();
-                JObject.Get('optionTitle', ComponentCodeToken);
-                JObject.Get('itemNo', OptionCodeToken);
-    
-                if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
-                    // Reserve each item using existing Reserve logic
-                    Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, WooCartItemKey + '_' + BundleProduct."Option Title", BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * BundleProduct.Quantity, InnerResponse);
-                    if not ResponseSucceeded(InnerResponse) then
-                        AnyFailure := true;
-                end;
-            end;
+            exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
 
-        if AnyFailure then begin
-            // In a complete implementation, this should roll back the previously reserved components.
-            ResponsePayload := BuildErrorResponse('RESERVATION_FAILED', 'Failed to reserve one or more bundle components.');
-            IdempotencyMgt.FailOperation(OperationId, 'RESERVATION_FAILED', 'Failed to reserve bundle.', ResponsePayload, 400);
+        RequestPayload := StrSubstNo('reserveBundle|%1|%2|%3', WooSessionId, WooCartItemKey, BundleCode);
+        RequestHash := IdempotencyMgt.CalculateRequestHash(RequestPayload);
+        if IdempotencyMgt.TryReplay(IdempotencyKey, RequestHash, ResponsePayload) then
+            exit(ResponseSucceeded(ResponsePayload));
+
+        OperationId := IdempotencyMgt.StartOperation(IdempotencyKey, 'ReserveBundle', RequestHash, RequestPayload, CorrelationId);
+
+        if not JArray.ReadFrom(OptionsJson) then begin
+            ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
+            IdempotencyMgt.FailOperation(OperationId, 'INVALID_JSON', 'Options must be a valid JSON array.', ResponsePayload, 400);
             exit(false);
         end;
+
+        foreach JToken in JArray do begin
+            if FailedItemNo <> '' then
+                break;
+
+            JObject := JToken.AsObject();
+            JObject.Get('optionTitle', ComponentCodeToken);
+            JObject.Get('itemNo', OptionCodeToken);
+
+            if not FindBundleProduct(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode(), BundleProduct) then begin
+                // Same "never silently do nothing" rule as GetBundleAvailability:
+                // a requested component that doesn't match any row must fail the
+                // whole reservation (and roll back whatever already succeeded),
+                // not be quietly skipped while the bundle-level response still
+                // reports success.
+                FailedItemNo := OptionCodeToken.AsValue().AsCode();
+                break;
+            end;
+
+            ComponentKey := WooCartItemKey + '_' + BundleProduct."Option Title";
+            Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, ComponentKey, BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * BundleProduct.Quantity, InnerResponse);
+            if not ResponseSucceeded(InnerResponse) then begin
+                FailedItemNo := BundleProduct."Item No.";
+                break;
+            end;
+
+            Clear(InnerJson);
+            if InnerJson.ReadFrom(InnerResponse) then begin
+                if InnerJson.Get('reservedQtyBase', InnerToken) then
+                    AggReservedBase += InnerToken.AsValue().AsDecimal();
+                if InnerJson.Get('backorderQtyBase', InnerToken) then
+                    AggBackorderBase += InnerToken.AsValue().AsDecimal();
+            end;
+
+            ReservedComponentKeys.Add(ComponentKey);
+        end;
+
+        if FailedItemNo <> '' then begin
+            // Fail-fast: stop at the first component failure rather than attempting
+            // the rest, then roll back every component reserved so far in this
+            // attempt - otherwise a partial failure leaves orphaned live
+            // reservations with no bundle-level Line tying them together.
+            EnsureSessionHeader(WooSessionId, WooCustomerId, WooCartHash, CorrelationId, OperationId, Header);
+            foreach ComponentKey in ReservedComponentKeys do begin
+                Clear(RollbackResponse);
+                if ReleaseLine(CopyStr(IdempotencyKey + '_rollback_' + ComponentKey, 1, 150), CorrelationId, Header."Reservation ID", ComponentKey, RollbackResponse) then
+                    AuditMgt.LogReservation(Header."Reservation ID", 'BundleRollback', 'Reserved', 'Released', StrSubstNo('Rolled back component line %1 after bundle reservation failed on item %2.', ComponentKey, FailedItemNo), OperationId, CorrelationId)
+                else
+                    AuditMgt.LogReservation(Header."Reservation ID", 'BundleRollbackFailed', 'Reserved', 'Reserved', StrSubstNo('Failed to roll back component line %1 after bundle reservation failed on item %2 - manual review required.', ComponentKey, FailedItemNo), OperationId, CorrelationId);
+            end;
+
+            exit(FailOperation(OperationId, IdempotencyMgt, 'BUNDLE_COMPONENT_RESERVATION_FAILED', StrSubstNo('Failed to reserve component item %1.', FailedItemNo), ResponsePayload));
+        end;
+
+        // Every inner Reserve() call above shares one session-level header
+        // (EnsureSessionHeader is keyed only by WooSessionId) - its
+        // Reservation ID/Expires At therefore already apply to the whole
+        // bundle line, same as a single-item Reserve(). A dedicated summary
+        // line keyed by the bundle's own, un-suffixed WooCartItemKey
+        // (distinct from each component's "<key>_<Option Title>" line used
+        // above for per-item stock bucketing) carries the bundle's aggregate
+        // reserved/backorder quantity, so this response gives callers the
+        // exact same reservationId/reservationLineId/expiresAt shape a
+        // single-item reservation does.
+        EnsureSessionHeader(WooSessionId, WooCustomerId, WooCartHash, CorrelationId, OperationId, Header);
+
+        if not GetLine(Header."Reservation ID", WooCartItemKey, Line) then begin
+            Line.Init();
+            Line."Reservation ID" := Header."Reservation ID";
+            Line."Line No." := NextLineNo(Header."Reservation ID");
+            Line."Woo Cart Item Key" := WooCartItemKey;
+        end;
+        Line.Quantity := Quantity;
+        Line."Quantity (Base)" := Quantity;
+        Line."Reserved Qty. (Base)" := AggReservedBase;
+        Line."Backorder Qty. (Base)" := AggBackorderBase;
+        Line.Status := Line.Status::Reserved;
+        Line."Correlation ID" := CorrelationId;
+        if IsNullGuid(Line."Reservation Line ID") then
+            Line.Insert(true)
+        else
+            Line.Modify(true);
 
         ResponsePayload :=
             '{' +
             JsonPair('success', 'true', false) + ',' +
-            JsonPair('bundleCode', BundleCode, true) +
+            JsonPair('reservationEnabled', 'true', false) + ',' +
+            JsonPair('bundleCode', BundleCode, true) + ',' +
+            JsonPair('reservationId', Format(Header."Reservation ID"), true) + ',' +
+            JsonPair('reservationLineId', Format(Line."Reservation Line ID"), true) + ',' +
+            JsonPair('status', Format(Line.Status), true) + ',' +
+            JsonPair('reservedQtyBase', FormatDecimal(AggReservedBase), false) + ',' +
+            JsonPair('backorderQtyBase', FormatDecimal(AggBackorderBase), false) + ',' +
+            JsonPair('expiresAt', Format(Header."Expires At", 0, 9), true) + ',' +
+            JsonPair('correlationId', CorrelationId, true) +
             '}';
-        IdempotencyMgt.CompleteOperation(OperationId, CreateGuid(), ResponsePayload, 200);
+        IdempotencyMgt.CompleteOperation(OperationId, Header."Reservation ID", ResponsePayload, 200);
         exit(true);
     end;
 
@@ -813,6 +901,33 @@ codeunit 60100 "BCSR Reservation Service"
     local procedure ResponseSucceeded(ResponsePayload: Text): Boolean
     begin
         exit(StrPos(ResponsePayload, '"success":true') > 0);
+    end;
+
+    // Exact-key Get() first (unchanged fast path for every currently-correct
+    // row - zero behavior change there). Falls back to a Bundle Code + Item
+    // No. scoped scan with a trimmed comparison only when the exact match
+    // misses, so a stored "Option Title" with stray leading/trailing
+    // whitespace (WordPress's sanitize_text_field() trims the incoming value
+    // before it ever reaches BC) still resolves correctly without touching
+    // the stored data.
+    local procedure FindBundleProduct(BundleCode: Code[20]; OptionTitle: Text; ItemNo: Code[20]; var BundleProduct: Record "Bundle Item Product"): Boolean
+    var
+        TrimmedOptionTitle: Text;
+    begin
+        if BundleProduct.Get(BundleCode, CopyStr(OptionTitle, 1, 50), ItemNo) then
+            exit(true);
+
+        TrimmedOptionTitle := DelChr(OptionTitle, '<>', ' ');
+        BundleProduct.Reset();
+        BundleProduct.SetRange("Bundle Code", BundleCode);
+        BundleProduct.SetRange("Item No.", ItemNo);
+        if BundleProduct.FindSet() then
+            repeat
+                if DelChr(BundleProduct."Option Title", '<>', ' ') = TrimmedOptionTitle then
+                    exit(true);
+            until BundleProduct.Next() = 0;
+
+        exit(false);
     end;
 
     local procedure BuildReservePayload(WooSessionId: Text; WooCartItemKey: Text; ItemNo: Code[20]; VariantCode: Code[10]; LocationCode: Code[10]; UomCode: Code[10]; Quantity: Decimal): Text
