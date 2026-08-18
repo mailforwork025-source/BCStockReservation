@@ -60,6 +60,9 @@ permissionset 60100 "BCSR ADMIN"
         page "Bundle Combination Lines Part" = X,
         page "Bundle Item Options Part" = X,
         page "Bundle Item Products Part" = X,
+        page "Bundle Image Map Header Part" = X,
+        page "Bundle Image Map Header Card" = X,
+        page "Bundle Image Map Lines Part" = X,
         report "BCSR Bulk Enable Reservation" = X,
         codeunit "BCSR Reservation Service" = X,
         codeunit "BCSR Backorder Service" = X,
@@ -73,7 +76,8 @@ permissionset 60100 "BCSR ADMIN"
         codeunit "BCSR Upgrade Mgt." = X,
         codeunit "Reservation Install Mgt." = X,
         codeunit "Reservation Job Handler" = X,
-        codeunit "Reservation Setup Mgt." = X;
+        codeunit "Reservation Setup Mgt." = X,
+        codeunit "BCSR Bundle Combo Gen." = X;
 }
 
 permissionset 60101 "BCSR API"
@@ -97,12 +101,16 @@ permissionset 60101 "BCSR API"
         tabledata "Bundle Item Combination" = RIMD,
         tabledata "Bundle Combination Header" = RIMD,
         tabledata "Bundle Combination Line" = RIMD,
+        tabledata "Bundle Image Mapping Header" = RIMD,
+        tabledata "Bundle Image Mapping Line" = RIMD,
         tabledata "BCSR Delivery Timeline" = RIMD,
         page APIBundles = X,
         page APIBundleComponents = X,
         page APIBundleOptions = X,
         page APIBundleCombinationHeaders = X,
         page APIBundleCombinationLines = X,
+        page APIBundleImageMappingHeaders = X,
+        page APIBundleImageMappingLines = X,
         codeunit "BCSR API Actions" = X,
         codeunit "BCSR Reservation Service" = X,
         codeunit "BCSR Backorder Service" = X,

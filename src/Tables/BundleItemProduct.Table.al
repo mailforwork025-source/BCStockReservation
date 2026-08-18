@@ -77,6 +77,46 @@ table 62004 "Bundle Item Product"
             Caption = 'Image URL';
             DataClassification = CustomerContent;
         }
+        field(12; "Is Default"; Boolean)
+        {
+            // The option WooCommerce treats as "selected" for this group
+            // before the customer has explicitly picked anything, for
+            // computing the initial "effective selection" that drives the
+            // main image on page load. Only meaningful for a group whose
+            // "Bundle Item Option"."Affects Image" = true; data entry is
+            // responsible for marking exactly one option per such group -
+            // not enforced (multiple/zero defaults don't corrupt anything,
+            // WooCommerce just uses whichever default it's given), but
+            // flagged here as a soft warning to catch the common mistake
+            // early.
+            Caption = 'Is Default';
+            DataClassification = CustomerContent;
+
+            trigger OnValidate()
+            var
+                OtherOption: Record "Bundle Item Product";
+            begin
+                if not "Is Default" then
+                    exit;
+
+                OtherOption.SetRange("Bundle Code", "Bundle Code");
+                OtherOption.SetRange("Option Title", "Option Title");
+                OtherOption.SetRange("Is Default", true);
+                OtherOption.SetFilter("Item No.", '<>%1', "Item No.");
+                if not OtherOption.IsEmpty() then
+                    Message('Another option in "%1" is already marked Is Default. Only one default per group is expected - the WooCommerce plugin uses whichever default it receives, so leaving more than one set is not an error, but is likely unintended.', "Option Title");
+            end;
+        }
+        field(13; "Name"; Text[100])
+        {
+            // Short, human-readable name for this option, distinct from
+            // "Display Label" (customer-facing pill/swatch text). Used to
+            // build the auto-generated Description on Bundle Image Mapping
+            // Header rows (e.g. "White + Black + Large"), so it should read
+            // well when joined with " + " against other options' Names.
+            Caption = 'Name';
+            DataClassification = CustomerContent;
+        }
     }
 
     keys

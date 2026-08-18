@@ -36,6 +36,11 @@ page 62014 "Bundle Item Products Part"
                 {
                     ApplicationArea = All;
                 }
+                field("Name"; Rec."Name")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Short name for this option, used to build the auto-generated Description when Bundle Image Mapping rows are bulk-created (e.g. "White + Black + Large").';
+                }
                 field("Color Hex Code"; Rec."Color Hex Code")
                 {
                     ApplicationArea = All;
@@ -47,6 +52,11 @@ page 62014 "Bundle Item Products Part"
                 field("Image URL"; Rec."Image URL")
                 {
                     ApplicationArea = All;
+                }
+                field("Is Default"; Rec."Is Default")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'The option WooCommerce treats as selected for this group before the customer picks anything - mark exactly one option per "Affects Image" group.';
                 }
             }
         }
