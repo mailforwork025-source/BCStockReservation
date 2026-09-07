@@ -41,6 +41,13 @@ pageextension 60125 "Item Card Reservation Ext." extends "Item Card"
                     Editable = false;
                     ToolTip = 'Quantity on open WooCommerce backorders.';
                 }
+                field("Native Reserved Qty"; NativeReservedQty)
+                {
+                    ApplicationArea = All;
+                    Caption = 'Native Reserved Qty.';
+                    Editable = false;
+                    ToolTip = 'Quantity reserved through standard Business Central sales orders (not WooCommerce). Already subtracted from WooCommerce Available Qty. above - shown here so a drop in availability with no WooCommerce reservation or backorder to explain it isn''t mistaken for an error.';
+                }
             }
         }
     }
@@ -56,6 +63,7 @@ pageextension 60125 "Item Card Reservation Ext." extends "Item Card"
             ReservedQty := 0;
             AvailableQty := 0;
             BackorderedQty := 0;
+            NativeReservedQty := 0;
             exit;
         end;
         AvailabilityMgt.GetOrCreateLockedBucket(Rec."No.", '', Setup."Website Location Code", Bucket);
@@ -63,10 +71,12 @@ pageextension 60125 "Item Card Reservation Ext." extends "Item Card"
         ReservedQty := Bucket."Reserved Qty." + Bucket."Pending Order Qty.";
         AvailableQty := AvailabilityMgt.GetAvailableQtyBase(Bucket);
         BackorderedQty := Bucket."Backorder Qty.";
+        NativeReservedQty := Bucket."Native Reserved Qty.";
     end;
 
     var
         ReservedQty: Decimal;
         AvailableQty: Decimal;
         BackorderedQty: Decimal;
+        NativeReservedQty: Decimal;
 }

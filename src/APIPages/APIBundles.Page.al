@@ -38,6 +38,10 @@ page 62000 APIBundles
                 {
                     Caption = 'Allow Back Order';
                 }
+                field(defaultImageUrl; Rec."Default Image URL")
+                {
+                    Caption = 'Default Image URL';
+                }
             }
         }
     }

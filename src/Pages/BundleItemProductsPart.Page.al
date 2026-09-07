@@ -22,15 +22,13 @@ page 62014 "Bundle Item Products Part"
                 {
                     ApplicationArea = All;
                 }
-                field("Price"; Rec."Price")
+                field("Variant Code"; Rec."Variant Code")
                 {
                     ApplicationArea = All;
                 }
-                field("Quantity"; Rec."Quantity")
+                field("Price"; Rec."Price")
                 {
                     ApplicationArea = All;
-                    Caption = 'Qty per Bundle';
-                    ToolTip = 'How many units of this component are consumed per bundle unit ordered (e.g. 4 for a set of table legs).';
                 }
                 field("Item Description"; Rec."Item Description")
                 {
@@ -57,6 +55,11 @@ page 62014 "Bundle Item Products Part"
                 {
                     ApplicationArea = All;
                     ToolTip = 'The option WooCommerce treats as selected for this group before the customer picks anything - mark exactly one option per "Affects Image" group.';
+                }
+                field("Linked Option Item No."; Rec."Linked Option Item No.")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'For a row in a stock-reserving group, the Item No. of the option in a different (usually non-reserving) group that this row should only be shown alongside - e.g. a Dimension row only appears once the matching Table Top finish is selected. Leave blank for a row that is not filtered by another group''s selection.';
                 }
             }
         }

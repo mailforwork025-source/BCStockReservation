@@ -51,6 +51,21 @@ page 62021 "Bundle Combination Header Part"
                     Page.Run(Page::"Bundle Combination Header Card", Rec);
                 end;
             }
+            action(GenerateAllCombinations)
+            {
+                ApplicationArea = All;
+                Caption = 'Generate All Combinations';
+                Image = CreateForm;
+                ToolTip = 'Creates one row here (Disabled Component/Option and Image URL left blank for you to fill in) for every possible combination across ALL of this bundle''s option groups. Combinations that already exist are skipped.';
+
+                trigger OnAction()
+                var
+                    GenMgt: Codeunit "BCSR Bundle Combo Gen.";
+                begin
+                    GenMgt.GenerateAllCombinationRules(Rec."Bundle Code");
+                    CurrPage.Update(false);
+                end;
+            }
         }
     }
 

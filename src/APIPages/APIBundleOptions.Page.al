@@ -51,10 +51,6 @@ page 62002 APIBundleOptions
                 {
                     Caption = 'Price';
                 }
-                field(quantity; Rec.Quantity)
-                {
-                    Caption = 'Quantity';
-                }
                 field(variantCode; Rec."Variant Code")
                 {
                     Caption = 'Variant Code';
@@ -70,6 +66,14 @@ page 62002 APIBundleOptions
                 field(imageUrl; Rec."Image URL")
                 {
                     Caption = 'Image URL';
+                }
+                field(isDefault; Rec."Is Default")
+                {
+                    Caption = 'Is Default';
+                }
+                field(linkedOptionItemNo; Rec."Linked Option Item No.")
+                {
+                    Caption = 'Linked Option Item No.';
                 }
             }
         }

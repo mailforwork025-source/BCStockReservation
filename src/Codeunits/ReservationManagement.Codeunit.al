@@ -524,17 +524,31 @@ codeunit 60100 "BCSR Reservation Service"
         AvailabilityMgt: Codeunit "BCSR Availability Mgt.";
         AvailableBase: Decimal;
         BackorderEnabledText: Text;
+        ReservationEnabledText: Text;
     begin
         if not Item.Get(ItemNo) then begin
             ResponsePayload := BuildErrorResponse('ITEM_NOT_FOUND', StrSubstNo('Item %1 was not found.', ItemNo));
             exit(false);
         end;
 
-        if not Item."BCSR Enable Reservation" then begin
-            ResponsePayload := BuildReservationDisabledResponse(ItemNo);
-            exit(true);
-        end;
-
+        // Was: an early exit here when Reservation was off, returning only
+        // {success,reservationEnabled:false,message} with no quantities and
+        // no backorderEnabled at all - reservationEnabled and
+        // backorderEnabled are two independent settings (Reservation
+        // governs whether stock gets temporarily held on add-to-cart;
+        // Backorder governs whether purchase is allowed once stock hits
+        // zero), so gating the ENTIRE availability response on Reservation
+        // meant Backorder could never take effect on the storefront while
+        // Reservation was off for an item, no matter what Backorder was
+        // set to. Confirmed live: WordPress kept reporting
+        // backorderEnabled:false for an item that had Backorder turned ON
+        // in BC, because this response never carried that field at all.
+        // Availability/backorder data is now always computed and returned;
+        // reservationEnabled is reported as Item."BCSR Enable Reservation"
+        // (true or false) rather than gating the whole response - callers
+        // (Reserve/ReserveBundle) are the ones that actually decide whether
+        // to place a stock hold, and they already check this flag
+        // separately.
         Setup.GetSetup();
         if LocationCode = '' then
             LocationCode := Setup."Website Location Code";
@@ -545,10 +559,14 @@ codeunit 60100 "BCSR Reservation Service"
             BackorderEnabledText := 'true'
         else
             BackorderEnabledText := 'false';
+        if Item."BCSR Enable Reservation" then
+            ReservationEnabledText := 'true'
+        else
+            ReservationEnabledText := 'false';
         ResponsePayload :=
             '{' +
             JsonPair('success', 'true', false) + ',' +
-            JsonPair('reservationEnabled', 'true', false) + ',' +
+            JsonPair('reservationEnabled', ReservationEnabledText, false) + ',' +
             JsonPair('backorderEnabled', BackorderEnabledText, false) + ',' +
             JsonPair('itemNo', ItemNo, true) + ',' +
             JsonPair('baseUomCode', Item."Base Unit of Measure", true) + ',' +
@@ -570,6 +588,8 @@ codeunit 60100 "BCSR Reservation Service"
         JObject: JsonObject;
         ComponentCodeToken: JsonToken;
         OptionCodeToken: JsonToken;
+        VariantCodeToken: JsonToken;
+        VariantCode: Code[10];
         BundleProduct: Record "Bundle Item Product";
         Setup: Record "BCSR Setup";
         Bucket: Record "BCSR Availability Bucket";
@@ -579,6 +599,10 @@ codeunit 60100 "BCSR Reservation Service"
         Item: Record Item;
         ComponentsJson: Text;
         FirstComponent: Boolean;
+        GroupQuantity: Decimal;
+        ProcessedTitles: List of [Text];
+        HiddenTitles: List of [Text];
+        HiddenTitle: Text;
     begin
         if not JArray.ReadFrom(OptionsJson) then begin
             ResponsePayload := BuildErrorResponse('INVALID_JSON', 'Options must be a valid JSON array.');
@@ -597,10 +621,15 @@ codeunit 60100 "BCSR Reservation Service"
             JObject := JToken.AsObject();
             JObject.Get('optionTitle', ComponentCodeToken);
             JObject.Get('itemNo', OptionCodeToken);
+            if JObject.Get('variantCode', VariantCodeToken) and (not VariantCodeToken.AsValue().IsNull()) then
+                VariantCode := VariantCodeToken.AsValue().AsCode()
+            else
+                VariantCode := '';
 
             AvailableBase := 0;
+            ProcessedTitles.Add(ComponentCodeToken.AsValue().AsText());
 
-            if not FindBundleProduct(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode(), BundleProduct) then begin
+            if not FindBundleProduct(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode(), VariantCode, BundleProduct) then begin
                 // A requested component that doesn't match any Bundle Item
                 // Product row must never be silently treated as "0 available" -
                 // that's indistinguishable from genuine out-of-stock and would
@@ -611,14 +640,57 @@ codeunit 60100 "BCSR Reservation Service"
                 exit(false);
             end;
 
+            // The selection is validated (row must exist) but a non-reserving
+            // group (e.g. a visual-only finish selector) contributes nothing
+            // to availability - its stock is reserved through a different
+            // group instead.
+            if GroupReservesStock(BundleCode, BundleProduct."Option Title") then begin
+                if Item.Get(BundleProduct."Item No.") then begin
+                    AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", BundleProduct."Variant Code", LocationCode, Bucket);
+                    AvailabilityMgt.RecalculateBucket(Bucket);
+                    AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
+
+                    // Consider component quantity required (group-level, from Bundle Item Option)
+                    GroupQuantity := GetGroupQuantity(BundleCode, BundleProduct."Option Title");
+                    if GroupQuantity > 0 then
+                        AvailableBase := AvailableBase / GroupQuantity;
+
+                    if AvailableBase < MinAvailable then
+                        MinAvailable := AvailableBase;
+                end;
+
+                if not FirstComponent then
+                    ComponentsJson += ',';
+                FirstComponent := false;
+
+                ComponentsJson += '{' +
+                    JsonPair('optionTitle', ComponentCodeToken.AsValue().AsText(), true) + ',' +
+                    JsonPair('itemNo', OptionCodeToken.AsValue().AsText(), true) + ',' +
+                    JsonPair('availableQtyBase', FormatDecimal(AvailableBase), false) +
+                    '}';
+            end;
+        end;
+
+        // Hidden groups are never sent by the customer's browser at all - fold
+        // their mandatory product into the same availability check here, so
+        // "can this order actually be fulfilled" reflects the real total
+        // commitment, not just what the customer could see and pick.
+        HiddenTitles := GetHiddenGroupTitles(BundleCode, ProcessedTitles);
+        foreach HiddenTitle in HiddenTitles do begin
+            if not ResolveHiddenGroupProduct(BundleCode, CopyStr(HiddenTitle, 1, 50), BundleProduct) then begin
+                ResponsePayload := BuildErrorResponse('HIDDEN_COMPONENT_NOT_CONFIGURED', StrSubstNo('Hidden group "%1" on bundle %2 has no single resolvable product (needs exactly one row, or exactly one marked Is Default).', HiddenTitle, BundleCode));
+                exit(false);
+            end;
+
+            AvailableBase := 0;
             if Item.Get(BundleProduct."Item No.") then begin
                 AvailabilityMgt.GetOrCreateLockedBucket(Item."No.", BundleProduct."Variant Code", LocationCode, Bucket);
                 AvailabilityMgt.RecalculateBucket(Bucket);
                 AvailableBase := AvailabilityMgt.GetAvailableQtyBase(Bucket);
 
-                // Consider component quantity required
-                if BundleProduct.Quantity > 0 then
-                    AvailableBase := AvailableBase / BundleProduct.Quantity;
+                GroupQuantity := GetGroupQuantity(BundleCode, BundleProduct."Option Title");
+                if GroupQuantity > 0 then
+                    AvailableBase := AvailableBase / GroupQuantity;
 
                 if AvailableBase < MinAvailable then
                     MinAvailable := AvailableBase;
@@ -627,10 +699,10 @@ codeunit 60100 "BCSR Reservation Service"
             if not FirstComponent then
                 ComponentsJson += ',';
             FirstComponent := false;
-            
+
             ComponentsJson += '{' +
-                JsonPair('optionTitle', ComponentCodeToken.AsValue().AsText(), true) + ',' +
-                JsonPair('itemNo', OptionCodeToken.AsValue().AsText(), true) + ',' +
+                JsonPair('optionTitle', HiddenTitle, true) + ',' +
+                JsonPair('itemNo', BundleProduct."Item No.", true) + ',' +
                 JsonPair('availableQtyBase', FormatDecimal(AvailableBase), false) +
                 '}';
         end;
@@ -655,6 +727,8 @@ codeunit 60100 "BCSR Reservation Service"
         JObject: JsonObject;
         ComponentCodeToken: JsonToken;
         OptionCodeToken: JsonToken;
+        VariantCodeToken: JsonToken;
+        VariantCode: Code[10];
         BundleProduct: Record "Bundle Item Product";
         IdempotencyMgt: Codeunit "BCSR Idempotency Mgt.";
         AuditMgt: Codeunit "BCSR Audit Mgt.";
@@ -672,6 +746,9 @@ codeunit 60100 "BCSR Reservation Service"
         ComponentKey: Text;
         FailedItemNo: Code[20];
         RollbackResponse: Text;
+        ProcessedTitles: List of [Text];
+        HiddenTitles: List of [Text];
+        HiddenTitle: Text;
     begin
         if IdempotencyKey = '' then
             exit(FailOperation(OperationId, IdempotencyMgt, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required.', ResponsePayload));
@@ -696,8 +773,14 @@ codeunit 60100 "BCSR Reservation Service"
             JObject := JToken.AsObject();
             JObject.Get('optionTitle', ComponentCodeToken);
             JObject.Get('itemNo', OptionCodeToken);
+            if JObject.Get('variantCode', VariantCodeToken) and (not VariantCodeToken.AsValue().IsNull()) then
+                VariantCode := VariantCodeToken.AsValue().AsCode()
+            else
+                VariantCode := '';
 
-            if not FindBundleProduct(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode(), BundleProduct) then begin
+            ProcessedTitles.Add(ComponentCodeToken.AsValue().AsText());
+
+            if not FindBundleProduct(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode(), VariantCode, BundleProduct) then begin
                 // Same "never silently do nothing" rule as GetBundleAvailability:
                 // a requested component that doesn't match any row must fail the
                 // whole reservation (and roll back whatever already succeeded),
@@ -707,22 +790,64 @@ codeunit 60100 "BCSR Reservation Service"
                 break;
             end;
 
-            ComponentKey := WooCartItemKey + '_' + BundleProduct."Option Title";
-            Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, ComponentKey, BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * BundleProduct.Quantity, InnerResponse);
-            if not ResponseSucceeded(InnerResponse) then begin
-                FailedItemNo := BundleProduct."Item No.";
-                break;
-            end;
+            // The selection is validated (row must exist) but a non-reserving
+            // group (e.g. a visual-only finish selector) is recorded on the
+            // WooCommerce side only - it must never be sent to Reserve(),
+            // otherwise the same physical item risks being reserved twice
+            // when another group reserves the real stock for it.
+            if GroupReservesStock(BundleCode, BundleProduct."Option Title") then begin
+                ComponentKey := WooCartItemKey + '_' + BundleProduct."Option Title";
+                Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, ComponentKey, BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * GetGroupQuantity(BundleCode, BundleProduct."Option Title"), InnerResponse);
+                if not ResponseSucceeded(InnerResponse) then begin
+                    FailedItemNo := BundleProduct."Item No.";
+                    break;
+                end;
 
-            Clear(InnerJson);
-            if InnerJson.ReadFrom(InnerResponse) then begin
-                if InnerJson.Get('reservedQtyBase', InnerToken) then
-                    AggReservedBase += InnerToken.AsValue().AsDecimal();
-                if InnerJson.Get('backorderQtyBase', InnerToken) then
-                    AggBackorderBase += InnerToken.AsValue().AsDecimal();
-            end;
+                Clear(InnerJson);
+                if InnerJson.ReadFrom(InnerResponse) then begin
+                    if InnerJson.Get('reservedQtyBase', InnerToken) then
+                        AggReservedBase += InnerToken.AsValue().AsDecimal();
+                    if InnerJson.Get('backorderQtyBase', InnerToken) then
+                        AggBackorderBase += InnerToken.AsValue().AsDecimal();
+                end;
 
-            ReservedComponentKeys.Add(ComponentKey);
+                ReservedComponentKeys.Add(ComponentKey);
+            end;
+        end;
+
+        // Hidden groups are never sent by the customer's browser at all -
+        // their mandatory product still gets reserved on every order, using
+        // the exact same Reserve()/rollback machinery as a customer-visible
+        // component. Skipped entirely if the visible components already
+        // failed above, to keep the existing fail-fast/rollback behavior.
+        if FailedItemNo = '' then begin
+            HiddenTitles := GetHiddenGroupTitles(BundleCode, ProcessedTitles);
+            foreach HiddenTitle in HiddenTitles do begin
+                if FailedItemNo <> '' then
+                    break;
+
+                if not ResolveHiddenGroupProduct(BundleCode, CopyStr(HiddenTitle, 1, 50), BundleProduct) then begin
+                    FailedItemNo := CopyStr('HIDDEN:' + HiddenTitle, 1, 20);
+                    break;
+                end;
+
+                ComponentKey := WooCartItemKey + '_' + BundleProduct."Option Title";
+                Reserve(IdempotencyKey + '_' + BundleProduct."Item No.", CorrelationId, WooSessionId, WooCustomerId, WooCartHash, ComponentKey, BundleProduct."Item No.", BundleProduct."Variant Code", LocationCode, '', Quantity * GetGroupQuantity(BundleCode, BundleProduct."Option Title"), InnerResponse);
+                if not ResponseSucceeded(InnerResponse) then begin
+                    FailedItemNo := BundleProduct."Item No.";
+                    break;
+                end;
+
+                Clear(InnerJson);
+                if InnerJson.ReadFrom(InnerResponse) then begin
+                    if InnerJson.Get('reservedQtyBase', InnerToken) then
+                        AggReservedBase += InnerToken.AsValue().AsDecimal();
+                    if InnerJson.Get('backorderQtyBase', InnerToken) then
+                        AggBackorderBase += InnerToken.AsValue().AsDecimal();
+                end;
+
+                ReservedComponentKeys.Add(ComponentKey);
+            end;
         end;
 
         if FailedItemNo <> '' then begin
@@ -910,10 +1035,15 @@ codeunit 60100 "BCSR Reservation Service"
     // whitespace (WordPress's sanitize_text_field() trims the incoming value
     // before it ever reaches BC) still resolves correctly without touching
     // the stored data.
-    local procedure FindBundleProduct(BundleCode: Code[20]; OptionTitle: Text; ItemNo: Code[20]; var BundleProduct: Record "Bundle Item Product"): Boolean
+    local procedure FindBundleProduct(BundleCode: Code[20]; OptionTitle: Text; ItemNo: Code[20]; VariantCode: Code[10]; var BundleProduct: Record "Bundle Item Product"): Boolean
     var
         TrimmedOptionTitle: Text;
     begin
+        // Variant Code is a plain (non-key) field on this table - each real
+        // option is its own distinct Item No., so Bundle Code + Option
+        // Title + Item No. alone is enough to find the row uniquely.
+        // VariantCode is accepted for API-compatibility with callers but no
+        // longer needed for the lookup itself.
         if BundleProduct.Get(BundleCode, CopyStr(OptionTitle, 1, 50), ItemNo) then
             exit(true);
 
@@ -928,6 +1058,76 @@ codeunit 60100 "BCSR Reservation Service"
             until BundleProduct.Next() = 0;
 
         exit(false);
+    end;
+
+    local procedure GetGroupQuantity(BundleCode: Code[20]; OptionTitle: Text[50]): Decimal
+    var
+        BundleOption: Record "Bundle Item Option";
+    begin
+        if BundleOption.Get(BundleCode, OptionTitle) then
+            exit(BundleOption.Quantity);
+        exit(1);
+    end;
+
+    // A group with Reserves Stock = false (e.g. a visual-only finish
+    // selector) still records its selection on the WooCommerce side, but
+    // must never be sent to availability/reservation - otherwise the same
+    // physical item could be committed twice for one order when another
+    // group reserves the real stock for it. Missing rows default to true,
+    // matching every group's behavior before this field existed.
+    local procedure GroupReservesStock(BundleCode: Code[20]; OptionTitle: Text[50]): Boolean
+    var
+        BundleOption: Record "Bundle Item Option";
+    begin
+        if BundleOption.Get(BundleCode, OptionTitle) then
+            exit(BundleOption."Reserves Stock");
+        exit(true);
+    end;
+
+    // Every "Hidden From Customer" group on the bundle that the caller's own
+    // component list didn't already cover - trimmed-whitespace comparison,
+    // same tolerance FindBundleProduct already applies elsewhere, so a
+    // hidden title never gets double-counted just because of stray spacing.
+    local procedure GetHiddenGroupTitles(BundleCode: Code[20]; var ProcessedTitles: List of [Text]): List of [Text]
+    var
+        BundleOption: Record "Bundle Item Option";
+        Result: List of [Text];
+        ProcessedTitle: Text;
+        AlreadyProcessed: Boolean;
+    begin
+        BundleOption.SetRange("Bundle Code", BundleCode);
+        BundleOption.SetRange("Hidden From Customer", true);
+        if BundleOption.FindSet() then
+            repeat
+                AlreadyProcessed := false;
+                foreach ProcessedTitle in ProcessedTitles do
+                    if DelChr(ProcessedTitle, '<>', ' ') = DelChr(BundleOption."Option Title", '<>', ' ') then
+                        AlreadyProcessed := true;
+                if not AlreadyProcessed then
+                    Result.Add(BundleOption."Option Title");
+            until BundleOption.Next() = 0;
+        exit(Result);
+    end;
+
+    // A hidden group has no customer selection to resolve against, so it
+    // must be unambiguous on its own: exactly one real product row, or -
+    // if there's more than one - exactly one marked Is Default. Anything
+    // else is a real data-entry gap, not something to guess past.
+    local procedure ResolveHiddenGroupProduct(BundleCode: Code[20]; OptionTitle: Text[50]; var BundleProduct: Record "Bundle Item Product"): Boolean
+    begin
+        BundleProduct.Reset();
+        BundleProduct.SetRange("Bundle Code", BundleCode);
+        BundleProduct.SetRange("Option Title", OptionTitle);
+        case BundleProduct.Count() of
+            0:
+                exit(false);
+            1:
+                exit(BundleProduct.FindFirst());
+            else begin
+                BundleProduct.SetRange("Is Default", true);
+                exit(BundleProduct.FindFirst());
+            end;
+        end;
     end;
 
     local procedure BuildReservePayload(WooSessionId: Text; WooCartItemKey: Text; ItemNo: Code[20]; VariantCode: Code[10]; LocationCode: Code[10]; UomCode: Code[10]; Quantity: Decimal): Text

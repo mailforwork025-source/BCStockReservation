@@ -95,7 +95,11 @@ codeunit 62030 "BCSR Delivery Mgt."
             JObject.Get('optionTitle', ComponentCodeToken);
             JObject.Get('itemNo', OptionCodeToken);
 
-            if BundleProduct.Get(BundleCode, ComponentCodeToken.AsValue().AsText(), OptionCodeToken.AsValue().AsCode()) then begin
+            BundleProduct.Reset();
+            BundleProduct.SetRange("Bundle Code", BundleCode);
+            BundleProduct.SetRange("Option Title", CopyStr(ComponentCodeToken.AsValue().AsText(), 1, 50));
+            BundleProduct.SetRange("Item No.", OptionCodeToken.AsValue().AsCode());
+            if BundleProduct.FindFirst() then begin
                 if CalculateDeliveryTimeline(BundleProduct."Item No.", Quantity, CompDeliveryDays, CompEstimatedDate) then begin
                     if CompDeliveryDays > MaxDeliveryDays then
                         MaxDeliveryDays := CompDeliveryDays;

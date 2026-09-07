@@ -54,6 +54,22 @@ page 62001 APIBundleComponents
                 {
                     Caption = 'Display Style';
                 }
+                field(affectsImage; Rec."Affects Image")
+                {
+                    Caption = 'Affects Image';
+                }
+                field(quantity; Rec.Quantity)
+                {
+                    Caption = 'Quantity';
+                }
+                field(hiddenFromCustomer; Rec."Hidden From Customer")
+                {
+                    Caption = 'Hidden From Customer';
+                }
+                field(reservesStock; Rec."Reserves Stock")
+                {
+                    Caption = 'Reserves Stock';
+                }
             }
         }
     }

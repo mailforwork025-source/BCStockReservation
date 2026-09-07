@@ -1,17 +1,14 @@
-table 62004 "Bundle Item Product"
+table 62041 "Bundle Item Product V2"
 {
-    // The canonical, live table - kept exactly as originally deployed
-    // (name, fields, key all unchanged) throughout the 2.4.0-2.6.0
-    // schema churn: a Variant Code-based key widening was tried (2.4.0-
-    // 2.5.0) to let one option group offer the same base item under
-    // multiple Item Variants, then abandoned in favor of every real
-    // option simply getting its own distinct Item No. (2.6.0). BC's
-    // schema sync rejects both an in-place key widening and a rename of
-    // a published table, so "Bundle Item Product V2" (table 62041) had
-    // to be introduced and later drained back into this one rather than
-    // ever being removed - it stays defined (BC does not allow removing
-    // a previously-published table) but is not read or written by
-    // anything going forward.
+    // DEAD TABLE - do not read or write. Introduced 2.5.0 as a Variant
+    // Code-keyed replacement for table 62004 (needed a genuinely new
+    // object name since BC's schema sync matches tables by name across
+    // versions, so reusing "Bundle Item Product" on a new ID still got
+    // treated as the same table and rejected the wider key). Abandoned
+    // 2.6.0 in favor of every real option getting its own distinct Item
+    // No. instead - all data was moved back to 62004 and this table
+    // cleared. Stays defined only because BC does not allow removing a
+    // previously-published table.
     Caption = 'Bundle Item Product';
     DataClassification = CustomerContent;
 
@@ -55,18 +52,13 @@ table 62004 "Bundle Item Product"
         }
         field(7; "Variant Code"; Code[10])
         {
+            // Part of the primary key as of 2.5.0 - lets one Item No.
+            // appear more than once in the same group, one row per real
+            // Item Variant (e.g. a "Dimension" group on the bundle's own
+            // item, one row per size variant, each with its own Price).
             Caption = 'Variant Code';
             TableRelation = "Item Variant".Code WHERE ("Item No." = FIELD("Item No."));
             DataClassification = CustomerContent;
-        }
-        field(8; "Quantity"; Decimal)
-        {
-            Caption = 'Quantity';
-            DataClassification = CustomerContent;
-            InitValue = 1;
-            ObsoleteState = Pending;
-            ObsoleteReason = 'Moved to "Bundle Item Option".Quantity - quantity is a property of the option group, not of an individual product within it. Field kept (not removed) so existing historical values are not lost; no longer read by AL logic.';
-            ObsoleteTag = '2.3.0';
         }
         field(9; "Color Hex Code"; Text[10])
         {
@@ -109,7 +101,7 @@ table 62004 "Bundle Item Product"
 
             trigger OnValidate()
             var
-                OtherOption: Record "Bundle Item Product";
+                OtherOption: Record "Bundle Item Product V2";
             begin
                 if not "Is Default" then
                     exit;
@@ -132,23 +124,11 @@ table 62004 "Bundle Item Product"
             Caption = 'Name';
             DataClassification = CustomerContent;
         }
-        field(14; "Linked Option Item No."; Code[20])
-        {
-            // Ties this row to the specific option in another group that it
-            // must be shown alongside (e.g. a Dimension row is only a valid
-            // choice once a matching Table Top finish is selected). Stores
-            // the Item No. of the option it depends on - not a free-text
-            // label - so the link survives a Display Label edit. Blank means
-            // this row is not filtered by any other group's selection.
-            Caption = 'Linked Option Item No.';
-            TableRelation = Item;
-            DataClassification = CustomerContent;
-        }
     }
 
     keys
     {
-        key(PK; "Bundle Code", "Option Title", "Item No.")
+        key(PK; "Bundle Code", "Option Title", "Item No.", "Variant Code")
         {
             Clustered = true;
         }

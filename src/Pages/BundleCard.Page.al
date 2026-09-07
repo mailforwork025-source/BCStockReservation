@@ -26,6 +26,11 @@ page 62011 "Bundle Card"
                 {
                     ApplicationArea = All;
                 }
+                field("Default Image URL"; Rec."Default Image URL")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Plain fallback main image, used only when no Bundle Image Mapping row matches even the default-driven selection.';
+                }
             }
             part("Bundle Option"; "Bundle Item Options Part")
             {
@@ -44,6 +49,12 @@ page 62011 "Bundle Card"
                 ApplicationArea = All;
                 SubPageLink = "Bundle Code" = field("Code");
                 Caption = 'Bundle Combinations';
+            }
+            part("Bundle Image Mappings"; "Bundle Image Map Header Part")
+            {
+                ApplicationArea = All;
+                SubPageLink = "Bundle Code" = field("Code");
+                Caption = 'Bundle Image Mappings';
             }
         }
         area(FactBoxes)

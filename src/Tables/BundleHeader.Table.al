@@ -28,6 +28,18 @@ table 62000 "Bundle Header"
             OptionCaption = 'Do not allow,Allow';
             DataClassification = CustomerContent;
         }
+        field(5; "Default Image URL"; Text[250])
+        {
+            // Plain fallback for the main product image on the WooCommerce
+            // bundle UI - used only when no Bundle Image Mapping row matches
+            // even the default-driven effective selection (a data-entry gap
+            // safety net, not the normal case: the normal case always
+            // resolves to a mapped image via the per-group Is Default
+            // options). Never used for the small swatch/tile buttons -
+            // those still use each option's own "Bundle Item Product"."Image URL".
+            Caption = 'Default Image URL';
+            DataClassification = CustomerContent;
+        }
     }
 
     keys
