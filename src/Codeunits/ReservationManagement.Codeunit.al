@@ -363,29 +363,49 @@ codeunit 60100 "BCSR Reservation Service"
         Header."Last Operation ID" := OperationId;
         Header.Modify(true);
 
+        // Bundle orders arrive from the external order-sync as a single
+        // collapsed Sales Line (one Item standing in for the whole bundle),
+        // while our own reservation already holds one real component per
+        // line. Split that collapsed line into one genuine Sales Line per
+        // component before attempting to match/reserve anything below - a
+        // no-op for non-bundle (single-line) reservations. See
+        // EnsureBundleSalesLinesSplit for the exact matching/safety rules.
+        EnsureBundleSalesLinesSplit(BCSalesOrderNo, ReservationId);
+
         Line.SetRange("Reservation ID", ReservationId);
         Line.SetFilter(Status, '%1|%2|%3', Line.Status::Reserved, Line.Status::PendingOrder, Line.Status::ManualReview);
         if Line.FindSet(true) then
             repeat
-                if Bucket.Get(Line."Bucket ID") then begin
-                    Bucket.LockTable();
-                    Line.Status := Line.Status::Confirmed;
-                    Line.Modify(true);
-                    AvailabilityMgt.RecalculateBucket(Bucket);
-                end;
-
-                Clear(FullyReserved);
-                if TryReserveSalesLine(BCSalesOrderNo, Line, FullyReserved) then begin
-                    Line.Modify(true);
-                    if not FullyReserved then begin
-                        NativeReservationFailed := true;
-                        ManualReviewReason := CopyStr(StrSubstNo('Native BC reservation for item %1 only partially succeeded (insufficient available inventory).', Line."Item No."), 1, 250);
-                        AuditMgt.LogReservation(ReservationId, 'NativeReservePartial', Format(Line.Status), Format(Line.Status), ManualReviewReason, OperationId, CorrelationId);
+                // A bundle's own aggregate/summary reservation line (see
+                // ReserveBundle) carries no Item No. - it exists only to
+                // report the bundle's combined reserved/backorder quantity
+                // back to the caller, and was never meant to correspond to
+                // a Sales Line of its own. Previously this fell through to
+                // TryReserveSalesLine with a blank Item No., which could
+                // never match any Sales Line and incorrectly forced every
+                // bundle order into Manual Review regardless of whether its
+                // components actually reserved fine.
+                if Line."Item No." <> '' then begin
+                    if Bucket.Get(Line."Bucket ID") then begin
+                        Bucket.LockTable();
+                        Line.Status := Line.Status::Confirmed;
+                        Line.Modify(true);
+                        AvailabilityMgt.RecalculateBucket(Bucket);
                     end;
-                end else begin
-                    NativeReservationFailed := true;
-                    ManualReviewReason := CopyStr(GetLastErrorText(), 1, 250);
-                    AuditMgt.LogReservation(ReservationId, 'NativeReserveFailed', Format(Line.Status), Format(Line.Status), ManualReviewReason, OperationId, CorrelationId);
+
+                    Clear(FullyReserved);
+                    if TryReserveSalesLine(BCSalesOrderNo, Line, FullyReserved) then begin
+                        Line.Modify(true);
+                        if not FullyReserved then begin
+                            NativeReservationFailed := true;
+                            ManualReviewReason := CopyStr(StrSubstNo('Native BC reservation for item %1 only partially succeeded (insufficient available inventory).', Line."Item No."), 1, 250);
+                            AuditMgt.LogReservation(ReservationId, 'NativeReservePartial', Format(Line.Status), Format(Line.Status), ManualReviewReason, OperationId, CorrelationId);
+                        end;
+                    end else begin
+                        NativeReservationFailed := true;
+                        ManualReviewReason := CopyStr(GetLastErrorText(), 1, 250);
+                        AuditMgt.LogReservation(ReservationId, 'NativeReserveFailed', Format(Line.Status), Format(Line.Status), ManualReviewReason, OperationId, CorrelationId);
+                    end;
                 end;
             until Line.Next() = 0;
 
@@ -966,6 +986,101 @@ codeunit 60100 "BCSR Reservation Service"
         Line.Status := Line.Status::Released;
         Line.Modify(true);
         AuditMgt.LogReservation(Line."Reservation ID", 'ReleaseLineForReprice', OldStatus, Format(Line.Status), 'Previous cart line reservation released before re-reserve.', OperationId, CorrelationId);
+    end;
+
+    // Splits a bundle order's single collapsed Sales Line (one Item stood in
+    // for the whole bundle, however the external order-sync built it) into
+    // one genuine Sales Line per component, matching this reservation's own
+    // per-component lines (real Item No., Variant, Location, Quantity - the
+    // exact data ReserveBundle already reserved stock against). The first
+    // component reuses the existing collapsed line in place (changes its
+    // Item No./Variant/Location/Quantity via Validate); every further
+    // component gets a newly inserted line. Deliberately conservative about
+    // when it acts, so it only ever touches orders it's confident are the
+    // exact case this exists for:
+    //   - Fewer than 2 real (non-summary) component lines on this
+    //     reservation: nothing to split, leave TryReserveSalesLine's
+    //     existing single-match path to handle it as before.
+    //   - Any component already has a "BC Sales Line System ID": this
+    //     reservation was already split (or ConfirmSync is being retried
+    //     after a prior partial run) - do nothing rather than split twice.
+    //   - The Sales Order doesn't have EXACTLY one Item-type line: could be
+    //     a normal multi-line order, or a bundle that was already split
+    //     correctly upstream - either way, guessing which line (if any) is
+    //     the "collapsed" one would risk mangling a legitimate order, so
+    //     this is left alone entirely.
+    local procedure EnsureBundleSalesLinesSplit(BCSalesOrderNo: Code[20]; ReservationId: Guid)
+    var
+        ComponentLine: Record "BCSR Reservation Line";
+        SalesHeader: Record "Sales Header";
+        ParentSalesLine: Record "Sales Line";
+        NewSalesLine: Record "Sales Line";
+        AlreadySynced: Boolean;
+        ParentLineConsumed: Boolean;
+    begin
+        ComponentLine.SetRange("Reservation ID", ReservationId);
+        ComponentLine.SetFilter("Item No.", '<>%1', '');
+        ComponentLine.SetFilter(Status, '%1|%2|%3', ComponentLine.Status::Reserved, ComponentLine.Status::PendingOrder, ComponentLine.Status::ManualReview);
+        if ComponentLine.Count() <= 1 then
+            exit;
+
+        if ComponentLine.FindSet() then
+            repeat
+                if not IsNullGuid(ComponentLine."BC Sales Line System ID") then
+                    AlreadySynced := true;
+            until (ComponentLine.Next() = 0) or AlreadySynced;
+        if AlreadySynced then
+            exit;
+
+        if not SalesHeader.Get(SalesHeader."Document Type"::Order, BCSalesOrderNo) then
+            exit;
+
+        ParentSalesLine.SetRange("Document Type", SalesHeader."Document Type");
+        ParentSalesLine.SetRange("Document No.", SalesHeader."No.");
+        ParentSalesLine.SetRange(Type, ParentSalesLine.Type::Item);
+        if ParentSalesLine.Count() <> 1 then
+            exit;
+        ParentSalesLine.FindFirst();
+
+        ComponentLine.FindSet();
+        repeat
+            if not ParentLineConsumed then begin
+                ParentSalesLine.Validate(Type, ParentSalesLine.Type::Item);
+                ParentSalesLine.Validate("No.", ComponentLine."Item No.");
+                if ComponentLine."Variant Code" <> '' then
+                    ParentSalesLine.Validate("Variant Code", ComponentLine."Variant Code");
+                if ComponentLine."Location Code" <> '' then
+                    ParentSalesLine.Validate("Location Code", ComponentLine."Location Code");
+                ParentSalesLine.Validate(Quantity, ComponentLine.Quantity);
+                ParentSalesLine.Modify(true);
+                ParentLineConsumed := true;
+            end else begin
+                NewSalesLine.Init();
+                NewSalesLine."Document Type" := SalesHeader."Document Type";
+                NewSalesLine."Document No." := SalesHeader."No.";
+                NewSalesLine."Line No." := GetNextSalesLineNo(SalesHeader);
+                NewSalesLine.Insert(true);
+                NewSalesLine.Validate(Type, NewSalesLine.Type::Item);
+                NewSalesLine.Validate("No.", ComponentLine."Item No.");
+                if ComponentLine."Variant Code" <> '' then
+                    NewSalesLine.Validate("Variant Code", ComponentLine."Variant Code");
+                if ComponentLine."Location Code" <> '' then
+                    NewSalesLine.Validate("Location Code", ComponentLine."Location Code");
+                NewSalesLine.Validate(Quantity, ComponentLine.Quantity);
+                NewSalesLine.Modify(true);
+            end;
+        until ComponentLine.Next() = 0;
+    end;
+
+    local procedure GetNextSalesLineNo(SalesHeader: Record "Sales Header"): Integer
+    var
+        SalesLine: Record "Sales Line";
+    begin
+        SalesLine.SetRange("Document Type", SalesHeader."Document Type");
+        SalesLine.SetRange("Document No.", SalesHeader."No.");
+        if SalesLine.FindLast() then
+            exit(SalesLine."Line No." + 10000);
+        exit(10000);
     end;
 
     [TryFunction]
