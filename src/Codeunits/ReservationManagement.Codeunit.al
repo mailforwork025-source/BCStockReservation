@@ -413,6 +413,21 @@ codeunit 60100 "BCSR Reservation Service"
             Header.Status := Header.Status::ManualReview;
             Header."Manual Review Reason" := ManualReviewReason;
             Header.Modify(true);
+
+            // Previously this still fell through to exit(true) below, so a
+            // reservation that landed in Manual Review here was reported to
+            // the caller as an ordinary success - WordPress's confirm_sync()
+            // only checks response['success'] before marking its own local
+            // reservation status 'confirmed', so it never learned the
+            // reservation actually needed attention, never retried via its
+            // outbox, and never logged a failure. Returning false here (with
+            // the real reason) lets that same existing WP-side manual-review/
+            // outbox-retry handling actually engage instead of silently
+            // no-oping on a reservation that looks fine but isn't.
+            ResponsePayload := BuildErrorResponse('BUNDLE_SPLIT_MANUAL_REVIEW', ManualReviewReason);
+            IdempotencyMgt.CompleteOperation(OperationId, ReservationId, ResponsePayload, 200);
+            AuditMgt.LogReservation(ReservationId, 'ConfirmSync', FromStatus, Format(Header.Status), ManualReviewReason, OperationId, CorrelationId);
+            exit(false);
         end;
 
         ResponsePayload := BuildStatusResponse(ReservationId, Header.Status, CorrelationId);
@@ -1015,8 +1030,10 @@ codeunit 60100 "BCSR Reservation Service"
         SalesHeader: Record "Sales Header";
         ParentSalesLine: Record "Sales Line";
         NewSalesLine: Record "Sales Line";
+        ReleaseSalesDoc: Codeunit "Release Sales Document";
         AlreadySynced: Boolean;
         ParentLineConsumed: Boolean;
+        WasReleased: Boolean;
     begin
         ComponentLine.SetRange("Reservation ID", ReservationId);
         ComponentLine.SetFilter("Item No.", '<>%1', '');
@@ -1035,11 +1052,34 @@ codeunit 60100 "BCSR Reservation Service"
         if not SalesHeader.Get(SalesHeader."Document Type"::Order, BCSalesOrderNo) then
             exit;
 
+        // Another integration (e.g. the WooCommerce order connector) may have
+        // already created and released this Sales Order before our own sync
+        // got a chance to split the bundle line - Sales Line edits are
+        // rejected while the header is Released, so reopen it here and
+        // re-release once the split is done, rather than losing the split
+        // to a race with whichever process releases first.
+        //
+        // Both Reopen and PerformManualRelease can throw a real, uncaught
+        // AL error (e.g. a blocking approval/warehouse validation) - letting
+        // that propagate out of EnsureBundleSalesLinesSplit would abort the
+        // entire ConfirmSync call, rolling back everything it already did in
+        // this invocation (including the Header/Line status updates made
+        // before this procedure ran), which is far worse than simply failing
+        // to split. TryReopenSalesHeader/TryReleaseSalesHeader below turn
+        // those into ordinary false-returning calls instead.
+        WasReleased := SalesHeader.Status = SalesHeader.Status::Released;
+        if WasReleased then
+            if not TryReopenSalesHeader(SalesHeader, ReleaseSalesDoc) then
+                exit; // Couldn't reopen - leave the order exactly as-is, don't attempt the split.
+
         ParentSalesLine.SetRange("Document Type", SalesHeader."Document Type");
         ParentSalesLine.SetRange("Document No.", SalesHeader."No.");
         ParentSalesLine.SetRange(Type, ParentSalesLine.Type::Item);
-        if ParentSalesLine.Count() <> 1 then
+        if ParentSalesLine.Count() <> 1 then begin
+            if WasReleased then
+                TryReleaseSalesHeader(SalesHeader, ReleaseSalesDoc);
             exit;
+        end;
         ParentSalesLine.FindFirst();
 
         ComponentLine.FindSet();
@@ -1070,6 +1110,26 @@ codeunit 60100 "BCSR Reservation Service"
                 NewSalesLine.Modify(true);
             end;
         until ComponentLine.Next() = 0;
+
+        // If re-release fails here, the split itself is already committed -
+        // leaving the order Open (instead of throwing and rolling the split
+        // back too) means a human just needs to release it manually, rather
+        // than losing the split work entirely alongside the rest of this
+        // ConfirmSync call.
+        if WasReleased then
+            TryReleaseSalesHeader(SalesHeader, ReleaseSalesDoc);
+    end;
+
+    [TryFunction]
+    local procedure TryReopenSalesHeader(var SalesHeader: Record "Sales Header"; var ReleaseSalesDoc: Codeunit "Release Sales Document")
+    begin
+        ReleaseSalesDoc.Reopen(SalesHeader);
+    end;
+
+    [TryFunction]
+    local procedure TryReleaseSalesHeader(var SalesHeader: Record "Sales Header"; var ReleaseSalesDoc: Codeunit "Release Sales Document")
+    begin
+        ReleaseSalesDoc.PerformManualRelease(SalesHeader);
     end;
 
     local procedure GetNextSalesLineNo(SalesHeader: Record "Sales Header"): Integer

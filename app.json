@@ -2,7 +2,7 @@
   "id": "8b398ef9-e92a-4592-9d2a-e88335e67c2a",
   "name": "BC Stock Reservation",
   "publisher": "Bornov Engineering",
-  "version": "1.1.2.19",
+  "version": "1.1.2.24",
   "brief": "Stock hold, cart reservation, and backorder management for WooCommerce",
   "description": "Standalone extension for cart stock reservations and backorder visibility. Works alongside existing WooCommerce integration without modifying it.",
   "privacyStatement": "https://example.com/privacy",
