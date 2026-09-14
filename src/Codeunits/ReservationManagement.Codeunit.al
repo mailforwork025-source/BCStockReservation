@@ -1031,13 +1031,28 @@ codeunit 60100 "BCSR Reservation Service"
         ParentSalesLine: Record "Sales Line";
         NewSalesLine: Record "Sales Line";
         ReleaseSalesDoc: Codeunit "Release Sales Document";
+        DebugAuditMgt: Codeunit "BCSR Audit Mgt.";
         AlreadySynced: Boolean;
         ParentLineConsumed: Boolean;
         WasReleased: Boolean;
+        DebugComponentCount: Integer;
     begin
+        // Status deliberately does NOT filter out Confirmed here: ConfirmSync's
+        // own main loop (below/after this call in the caller) marks every real
+        // component line Confirmed unconditionally, before it even attempts to
+        // match it to a Sales Line - regardless of whether that match (or a
+        // prior call's split attempt) actually succeeded. Excluding Confirmed
+        // meant a reservation whose FIRST ConfirmSync attempt failed to split
+        // (for any transient reason) could never be retried: every later call
+        // would see 0 "eligible" components and skip straight past, forever.
+        // "BC Sales Line System ID" populated (AlreadySynced, below) is the
+        // only real signal that a split has already happened - not this
+        // line's own Status.
         ComponentLine.SetRange("Reservation ID", ReservationId);
         ComponentLine.SetFilter("Item No.", '<>%1', '');
-        ComponentLine.SetFilter(Status, '%1|%2|%3', ComponentLine.Status::Reserved, ComponentLine.Status::PendingOrder, ComponentLine.Status::ManualReview);
+        ComponentLine.SetFilter(Status, '%1|%2|%3|%4', ComponentLine.Status::Reserved, ComponentLine.Status::PendingOrder, ComponentLine.Status::ManualReview, ComponentLine.Status::Confirmed);
+        DebugComponentCount := ComponentLine.Count();
+        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('ComponentCount=%1 SalesOrderNo=%2', DebugComponentCount, BCSalesOrderNo), ReservationId, '');
         if ComponentLine.Count() <= 1 then
             exit;
 
@@ -1046,11 +1061,14 @@ codeunit 60100 "BCSR Reservation Service"
                 if not IsNullGuid(ComponentLine."BC Sales Line System ID") then
                     AlreadySynced := true;
             until (ComponentLine.Next() = 0) or AlreadySynced;
+        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('AlreadySynced=%1', AlreadySynced), ReservationId, '');
         if AlreadySynced then
             exit;
 
-        if not SalesHeader.Get(SalesHeader."Document Type"::Order, BCSalesOrderNo) then
+        if not SalesHeader.Get(SalesHeader."Document Type"::Order, BCSalesOrderNo) then begin
+            DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', 'SalesHeader.Get FAILED', ReservationId, '');
             exit;
+        end;
 
         // Another integration (e.g. the WooCommerce order connector) may have
         // already created and released this Sales Order before our own sync
@@ -1068,13 +1086,17 @@ codeunit 60100 "BCSR Reservation Service"
         // to split. TryReopenSalesHeader/TryReleaseSalesHeader below turn
         // those into ordinary false-returning calls instead.
         WasReleased := SalesHeader.Status = SalesHeader.Status::Released;
+        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('WasReleased=%1', WasReleased), ReservationId, '');
         if WasReleased then
-            if not TryReopenSalesHeader(SalesHeader, ReleaseSalesDoc) then
+            if not TryReopenSalesHeader(SalesHeader, ReleaseSalesDoc) then begin
+                DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('Reopen FAILED: %1', GetLastErrorText()), ReservationId, '');
                 exit; // Couldn't reopen - leave the order exactly as-is, don't attempt the split.
+            end;
 
         ParentSalesLine.SetRange("Document Type", SalesHeader."Document Type");
         ParentSalesLine.SetRange("Document No.", SalesHeader."No.");
         ParentSalesLine.SetRange(Type, ParentSalesLine.Type::Item);
+        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('ParentSalesLineCount=%1', ParentSalesLine.Count()), ReservationId, '');
         if ParentSalesLine.Count() <> 1 then begin
             if WasReleased then
                 TryReleaseSalesHeader(SalesHeader, ReleaseSalesDoc);
@@ -1111,13 +1133,16 @@ codeunit 60100 "BCSR Reservation Service"
             end;
         until ComponentLine.Next() = 0;
 
+        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', 'Split loop completed successfully.', ReservationId, '');
+
         // If re-release fails here, the split itself is already committed -
         // leaving the order Open (instead of throwing and rolling the split
         // back too) means a human just needs to release it manually, rather
         // than losing the split work entirely alongside the rest of this
         // ConfirmSync call.
         if WasReleased then
-            TryReleaseSalesHeader(SalesHeader, ReleaseSalesDoc);
+            if not TryReleaseSalesHeader(SalesHeader, ReleaseSalesDoc) then
+                DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('Re-release FAILED: %1', GetLastErrorText()), ReservationId, '');
     end;
 
     [TryFunction]
