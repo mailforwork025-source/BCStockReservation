@@ -1003,6 +1003,43 @@ codeunit 60100 "BCSR Reservation Service"
         AuditMgt.LogReservation(Line."Reservation ID", 'ReleaseLineForReprice', OldStatus, Format(Line.Status), 'Previous cart line reservation released before re-reserve.', OperationId, CorrelationId);
     end;
 
+    // Runs the bundle split the instant any Sales Order gets released - by
+    // anyone, not just our own ConfirmSync flow. This is what actually makes
+    // the split happen right when "Generate Sales Order" completes, instead
+    // of waiting on WordPress's own cron/outbox-retry cycle (subject to
+    // WP-Cron's traffic-dependent timing, HTTP timeouts, and its own retry
+    // scheduling) to eventually call ConfirmSync later. Subscribing to this
+    // standard, Microsoft-owned event - rather than anything published by
+    // the WooCommerce order-sync extension itself - means this works
+    // regardless of which connector or process released the document, with
+    // no dependency on that extension's own (previously unreliable)
+    // subscriber chain.
+    //
+    // Deliberately does ONLY the split here, not the rest of ConfirmSync's
+    // work (Header/Line status transitions, native reservation matching,
+    // backorder creation) - WordPress's own ConfirmSync call still runs
+    // later and handles all of that as normal; EnsureBundleSalesLinesSplit's
+    // own AlreadySynced check means it will simply find the split already
+    // done and skip straight to matching/backorders, rather than this
+    // subscriber and ConfirmSync racing to do the same work twice.
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Release Sales Document", 'OnAfterReleaseSalesDoc', '', false, false)]
+    local procedure OnAfterReleaseSalesDoc(var SalesHeader: Record "Sales Header")
+    var
+        Header: Record "BCSR Reservation Header";
+    begin
+        if SalesHeader."Document Type" <> SalesHeader."Document Type"::Order then
+            exit;
+        if SalesHeader."External Document No." = '' then
+            exit;
+
+        Header.SetRange("Woo Order No.", CopyStr(SalesHeader."External Document No.", 1, 50));
+        Header.SetFilter(Status, '%1|%2', Header.Status::PendingOrder, Header.Status::ManualReview);
+        if not Header.FindFirst() then
+            exit;
+
+        EnsureBundleSalesLinesSplit(SalesHeader."No.", Header."Reservation ID");
+    end;
+
     // Splits a bundle order's single collapsed Sales Line (one Item stood in
     // for the whole bundle, however the external order-sync built it) into
     // one genuine Sales Line per component, matching this reservation's own
@@ -1030,12 +1067,9 @@ codeunit 60100 "BCSR Reservation Service"
         SalesHeader: Record "Sales Header";
         ParentSalesLine: Record "Sales Line";
         NewSalesLine: Record "Sales Line";
-        ReleaseSalesDoc: Codeunit "Release Sales Document";
-        DebugAuditMgt: Codeunit "BCSR Audit Mgt.";
         AlreadySynced: Boolean;
         ParentLineConsumed: Boolean;
         WasReleased: Boolean;
-        DebugComponentCount: Integer;
     begin
         // Status deliberately does NOT filter out Confirmed here: ConfirmSync's
         // own main loop (below/after this call in the caller) marks every real
@@ -1051,8 +1085,6 @@ codeunit 60100 "BCSR Reservation Service"
         ComponentLine.SetRange("Reservation ID", ReservationId);
         ComponentLine.SetFilter("Item No.", '<>%1', '');
         ComponentLine.SetFilter(Status, '%1|%2|%3|%4', ComponentLine.Status::Reserved, ComponentLine.Status::PendingOrder, ComponentLine.Status::ManualReview, ComponentLine.Status::Confirmed);
-        DebugComponentCount := ComponentLine.Count();
-        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('ComponentCount=%1 SalesOrderNo=%2', DebugComponentCount, BCSalesOrderNo), ReservationId, '');
         if ComponentLine.Count() <= 1 then
             exit;
 
@@ -1061,14 +1093,11 @@ codeunit 60100 "BCSR Reservation Service"
                 if not IsNullGuid(ComponentLine."BC Sales Line System ID") then
                     AlreadySynced := true;
             until (ComponentLine.Next() = 0) or AlreadySynced;
-        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('AlreadySynced=%1', AlreadySynced), ReservationId, '');
         if AlreadySynced then
             exit;
 
-        if not SalesHeader.Get(SalesHeader."Document Type"::Order, BCSalesOrderNo) then begin
-            DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', 'SalesHeader.Get FAILED', ReservationId, '');
+        if not SalesHeader.Get(SalesHeader."Document Type"::Order, BCSalesOrderNo) then
             exit;
-        end;
 
         // Another integration (e.g. the WooCommerce order connector) may have
         // already created and released this Sales Order before our own sync
@@ -1077,29 +1106,39 @@ codeunit 60100 "BCSR Reservation Service"
         // re-release once the split is done, rather than losing the split
         // to a race with whichever process releases first.
         //
+        // Deliberately NOT using Codeunit "Release Sales Document" here (its
+        // Reopen/PerformManualRelease) - that codeunit's standard
+        // release/reopen events are exactly what the WooCommerce order
+        // connector (NWT BC WooCommerce Integrations) subscribes to for its
+        // own bookkeeping, and its subscriber has proven unreliable when
+        // triggered from this call path (a table-permission error even once
+        // granted, then "The data does not represent a valid JSON token").
+        // The order's real Open->Released transition already happened once,
+        // done by that connector itself, before we ever see the document -
+        // this reopen/re-release is purely to edit line items and restore
+        // the same status, not a genuine warehouse/inventory-commitment
+        // release, so validating Status directly (skipping that codeunit's
+        // warehouse-request/inventory-commitment side effects along with
+        // its subscriber chain) is an acceptable, deliberate trade-off here.
+        //
         // Both Reopen and PerformManualRelease can throw a real, uncaught
-        // AL error (e.g. a blocking approval/warehouse validation) - letting
-        // that propagate out of EnsureBundleSalesLinesSplit would abort the
-        // entire ConfirmSync call, rolling back everything it already did in
-        // this invocation (including the Header/Line status updates made
-        // before this procedure ran), which is far worse than simply failing
-        // to split. TryReopenSalesHeader/TryReleaseSalesHeader below turn
-        // those into ordinary false-returning calls instead.
+        // AL error - letting that propagate out of EnsureBundleSalesLinesSplit
+        // would abort the entire ConfirmSync call, rolling back everything it
+        // already did in this invocation (including the Header/Line status
+        // updates made before this procedure ran), which is far worse than
+        // simply failing to split. TryReopenSalesHeader/TryReleaseSalesHeader
+        // below turn those into ordinary false-returning calls instead.
         WasReleased := SalesHeader.Status = SalesHeader.Status::Released;
-        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('WasReleased=%1', WasReleased), ReservationId, '');
         if WasReleased then
-            if not TryReopenSalesHeader(SalesHeader, ReleaseSalesDoc) then begin
-                DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('Reopen FAILED: %1', GetLastErrorText()), ReservationId, '');
+            if not TryReopenSalesHeader(SalesHeader) then
                 exit; // Couldn't reopen - leave the order exactly as-is, don't attempt the split.
-            end;
 
         ParentSalesLine.SetRange("Document Type", SalesHeader."Document Type");
         ParentSalesLine.SetRange("Document No.", SalesHeader."No.");
         ParentSalesLine.SetRange(Type, ParentSalesLine.Type::Item);
-        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('ParentSalesLineCount=%1', ParentSalesLine.Count()), ReservationId, '');
         if ParentSalesLine.Count() <> 1 then begin
             if WasReleased then
-                TryReleaseSalesHeader(SalesHeader, ReleaseSalesDoc);
+                TryReleaseSalesHeader(SalesHeader);
             exit;
         end;
         ParentSalesLine.FindFirst();
@@ -1133,28 +1172,32 @@ codeunit 60100 "BCSR Reservation Service"
             end;
         until ComponentLine.Next() = 0;
 
-        DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', 'Split loop completed successfully.', ReservationId, '');
-
         // If re-release fails here, the split itself is already committed -
         // leaving the order Open (instead of throwing and rolling the split
         // back too) means a human just needs to release it manually, rather
         // than losing the split work entirely alongside the rest of this
         // ConfirmSync call.
         if WasReleased then
-            if not TryReleaseSalesHeader(SalesHeader, ReleaseSalesDoc) then
-                DebugAuditMgt.LogReservation(ReservationId, 'DebugSplitTrace', '', '', StrSubstNo('Re-release FAILED: %1', GetLastErrorText()), ReservationId, '');
+            TryReleaseSalesHeader(SalesHeader);
+    end;
+
+    // Deliberately bypasses Codeunit "Release Sales Document" - see the
+    // comment in EnsureBundleSalesLinesSplit above for why. Direct field
+    // validation still runs the Status field's own OnValidate trigger (light
+    // internal bookkeeping), just not the full release codeunit's
+    // warehouse-request/inventory-commitment logic or its subscriber chain.
+    [TryFunction]
+    local procedure TryReopenSalesHeader(var SalesHeader: Record "Sales Header")
+    begin
+        SalesHeader.Validate(Status, SalesHeader.Status::Open);
+        SalesHeader.Modify(true);
     end;
 
     [TryFunction]
-    local procedure TryReopenSalesHeader(var SalesHeader: Record "Sales Header"; var ReleaseSalesDoc: Codeunit "Release Sales Document")
+    local procedure TryReleaseSalesHeader(var SalesHeader: Record "Sales Header")
     begin
-        ReleaseSalesDoc.Reopen(SalesHeader);
-    end;
-
-    [TryFunction]
-    local procedure TryReleaseSalesHeader(var SalesHeader: Record "Sales Header"; var ReleaseSalesDoc: Codeunit "Release Sales Document")
-    begin
-        ReleaseSalesDoc.PerformManualRelease(SalesHeader);
+        SalesHeader.Validate(Status, SalesHeader.Status::Released);
+        SalesHeader.Modify(true);
     end;
 
     local procedure GetNextSalesLineNo(SalesHeader: Record "Sales Header"): Integer

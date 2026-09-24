@@ -1,8 +1,8 @@
-pageextension 61003 "BCSR Biz Mgr RC Ext." extends "Business Manager Role Center"
+pageextension 61004 "BCSR Sales Rel. Mgr RC Ext." extends "Sales & Relationship Mgr. RC"
 {
     layout
     {
-        addfirst(RoleCenter)
+        addfirst(rolecenter)
         {
             part(BCSRBackorderActivities; "BCSR Backorder Activities")
             {
